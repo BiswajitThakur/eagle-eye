@@ -1,4 +1,4 @@
 [workspace]
 resolver = "3"
-members = [ "eagle-eye-cli", "eagle-eye-daemon","eagle-eye-proto"]
+members = [ "eagle-eye-broadcaster", "eagle-eye-cli", "eagle-eye-daemon","eagle-eye-proto"]
 
