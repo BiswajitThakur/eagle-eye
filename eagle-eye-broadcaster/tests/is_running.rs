@@ -14,7 +14,7 @@ use eagle_eye_broadcaster::{ReceiverInfo, SenderInfo};
 fn test_is_running_sender() {
     let interval = Arc::new(AtomicU64::new(200));
     let sender = SenderInfo::builder()
-        .prefix("hello".into())
+        .prefix("hello")
         .send_addr(SocketAddr::new(
             IpAddr::V4(Ipv4Addr::new(127, 96, 69, 96)),
             6969,

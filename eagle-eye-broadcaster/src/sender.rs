@@ -1,5 +1,5 @@
 use std::{
-    io,
+    io::{self, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     sync::{
         Arc,
@@ -87,8 +87,8 @@ impl Default for SenderInfoBuilder {
 }
 
 impl SenderInfoBuilder {
-    pub fn prefix(mut self, prefix: Vec<u8>) -> Self {
-        self.prefix = prefix;
+    pub fn prefix<T: Into<Vec<u8>>>(mut self, prefix: T) -> Self {
+        self.prefix = prefix.into();
         self
     }
     pub fn interval(mut self, time: Arc<AtomicU64>) -> Self {

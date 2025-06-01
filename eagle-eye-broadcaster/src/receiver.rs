@@ -13,14 +13,14 @@ pub enum AddrType {
 }
 
 pub struct ReceiverInfo<const S: usize> {
-    pub prefix: Vec<u8>,
-    pub is_running: Arc<AtomicBool>,
-    pub block_ip: Vec<IpAddr>,
-    pub block_ip_stack: Arc<Mutex<Vec<IpAddr>>>,
+    prefix: Vec<u8>,
+    is_running: Arc<AtomicBool>,
+    block_ip: Vec<IpAddr>,
+    block_ip_stack: Arc<Mutex<Vec<IpAddr>>>,
     //interval: Arc<Mutex<Duration>>,
-    pub buf: [u8; S],
-    pub recv_buf_len: Vec<usize>,
-    pub socket: Option<UdpSocket>,
+    buf: [u8; S],
+    recv_buf_len: Vec<usize>,
+    socket: Option<UdpSocket>,
 }
 
 impl<const S: usize> ReceiverInfo<S> {
@@ -30,14 +30,14 @@ impl<const S: usize> ReceiverInfo<S> {
 }
 
 pub struct ReceiverInfoBuilder<const S: usize> {
-    pub prefix: Vec<u8>,
-    pub is_running: Arc<AtomicBool>,
-    pub block_ip: Vec<IpAddr>,
-    pub block_ip_stack: Arc<Mutex<Vec<IpAddr>>>,
+    prefix: Vec<u8>,
+    is_running: Arc<AtomicBool>,
+    block_ip: Vec<IpAddr>,
+    block_ip_stack: Arc<Mutex<Vec<IpAddr>>>,
     //interval: Arc<Mutex<Duration>>,
-    pub buf: [u8; S],
-    pub recv_buf_len: Vec<usize>,
-    pub socket: Option<UdpSocket>,
+    buf: [u8; S],
+    recv_buf_len: Vec<usize>,
+    socket: Option<UdpSocket>,
 }
 
 impl<const S: usize> Default for ReceiverInfoBuilder<S> {
