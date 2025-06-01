@@ -20,12 +20,85 @@ pub struct ReceiverInfo<const S: usize> {
     //interval: Arc<Mutex<Duration>>,
     pub buf: [u8; S],
     pub recv_buf_len: Vec<usize>,
-    pub socket: UdpSocket,
+    pub socket: Option<UdpSocket>,
+}
+
+impl<const S: usize> ReceiverInfo<S> {
+    pub fn builder() -> ReceiverInfoBuilder<S> {
+        ReceiverInfoBuilder::default()
+    }
+}
+
+pub struct ReceiverInfoBuilder<const S: usize> {
+    pub prefix: Vec<u8>,
+    pub is_running: Arc<AtomicBool>,
+    pub block_ip: Vec<IpAddr>,
+    pub block_ip_stack: Arc<Mutex<Vec<IpAddr>>>,
+    //interval: Arc<Mutex<Duration>>,
+    pub buf: [u8; S],
+    pub recv_buf_len: Vec<usize>,
+    pub socket: Option<UdpSocket>,
+}
+
+impl<const S: usize> Default for ReceiverInfoBuilder<S> {
+    fn default() -> Self {
+        Self {
+            prefix: Vec::new(),
+            is_running: Arc::new(AtomicBool::new(true)),
+            block_ip: Vec::new(),
+            block_ip_stack: Arc::new(Mutex::new(Vec::new())),
+            buf: [0; S],
+            recv_buf_len: Vec::new(),
+            socket: None,
+        }
+    }
+}
+
+impl<const S: usize> ReceiverInfoBuilder<S> {
+    pub fn prefix<T: Into<Vec<u8>>>(mut self, value: T) -> Self {
+        self.prefix = value.into();
+        self
+    }
+    pub fn is_running(mut self, r: Arc<AtomicBool>) -> Self {
+        self.is_running = r;
+        self
+    }
+    pub fn block_ip(mut self, ips: Arc<Mutex<Vec<IpAddr>>>) -> Self {
+        self.block_ip_stack = ips;
+        self
+    }
+    pub fn buffer(mut self, buf: [u8; S]) -> Self {
+        self.buf = buf;
+        self
+    }
+    pub fn recv_buf_len(mut self, l: Vec<usize>) -> Self {
+        self.recv_buf_len = l;
+        self
+    }
+    pub fn socket(mut self, s: UdpSocket) -> Self {
+        self.socket = Some(s);
+        self
+    }
+    pub fn build(self) -> ReceiverInfo<S> {
+        ReceiverInfo {
+            prefix: self.prefix,
+            is_running: self.is_running,
+            block_ip: self.block_ip,
+            block_ip_stack: self.block_ip_stack,
+            buf: self.buf,
+            recv_buf_len: self.recv_buf_len,
+            socket: self.socket,
+        }
+    }
 }
 
 impl<const S: usize> Iterator for ReceiverInfo<S> {
     type Item = io::Result<AddrType>;
     fn next(&mut self) -> Option<Self::Item> {
+        if self.socket.is_none() {
+            return None;
+        }
+        let socket = self.socket.as_ref().unwrap();
         loop {
             if !self.is_running.load(Ordering::Relaxed) {
                 return None;
@@ -34,7 +107,7 @@ impl<const S: usize> Iterator for ReceiverInfo<S> {
             while let Some(addr) = b.pop() {
                 self.block_ip.push(addr);
             }
-            match self.socket.recv_from(&mut self.buf) {
+            match socket.recv_from(&mut self.buf) {
                 Ok((total, addr)) if self.recv_buf_len.contains(&total) => {
                     if self.block_ip.contains(&addr.ip()) {
                         continue;
