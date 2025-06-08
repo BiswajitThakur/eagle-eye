@@ -129,10 +129,12 @@ impl<const S: usize> Iterator for ReceiverInfo<S> {
                                 buf[p + 9],
                             ]);
                             let ipv4 = Ipv4Addr::from_bits(bits);
-                            return Some(Ok(AddrType::Verified(SocketAddr::new(
-                                IpAddr::V4(ipv4),
-                                port,
-                            ))));
+                            let ip = if ipv4 == Ipv4Addr::new(0, 0, 0, 0) {
+                                addr.ip()
+                            } else {
+                                IpAddr::V4(ipv4)
+                            };
+                            return Some(Ok(AddrType::Verified(SocketAddr::new(ip, port))));
                         }
                         6 => {
                             let mut addr_byte = [0; 16];

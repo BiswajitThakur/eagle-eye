@@ -21,7 +21,7 @@ impl SenderInfo {
     pub fn builder() -> SenderInfoBuilder {
         SenderInfoBuilder::default()
     }
-    pub fn send(self, is_running: Arc<AtomicBool>) -> io::Result<()> {
+    pub fn send(&self, is_running: Arc<AtomicBool>) -> io::Result<()> {
         let Self {
             prefix,
             interval,
@@ -55,7 +55,7 @@ impl SenderInfo {
             }
             socket.send_to(&buffer, broadcast_addr)?;
             match interval {
-                Some(ref interval) => {
+                Some(interval) => {
                     let millis = interval.load(Ordering::Relaxed);
                     std::thread::sleep(Duration::from_millis(millis));
                 }
