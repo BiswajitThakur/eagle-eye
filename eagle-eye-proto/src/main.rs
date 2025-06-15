@@ -1,6 +1,6 @@
 use std::{
     io::{self, Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{Shutdown, TcpListener, TcpStream},
     time::Duration,
 };
 
@@ -19,13 +19,28 @@ fn main() -> io::Result<()> {
                 return;
             }
         };
+        let mut buf = [0; 32];
+        let mut stdout = std::io::stdout();
         stream.write_all(b"-----\n").unwrap();
+        stream.flush().unwrap();
         stream.write_all(b"hello\n").unwrap();
+        stream.flush().unwrap();
         stream.write_all(b"world\n").unwrap();
+        stream.flush().unwrap();
         stream.write_all(b"-----\n").unwrap();
+        stream.flush().unwrap();
+        stream.shutdown_write().unwrap();
+        loop {
+            let n = stream.read(&mut buf).unwrap();
+            if n == 0 {
+                break;
+            }
+            stdout.write_all(&buf[0..n]).unwrap();
+            stdout.flush().unwrap();
+        }
     });
     let mut stdout = std::io::stdout();
-    let mut buf = [0; 100];
+    let mut buf = [0; 3];
     for stream in server.incoming() {
         let stream = stream?;
 
@@ -37,6 +52,8 @@ fn main() -> io::Result<()> {
                 break;
             }
         };
+        stream.write_all(b"fuckkkkkk")?;
+        stream.flush().unwrap();
         loop {
             let n = stream.read(&mut buf)?;
             if n == 0 {
@@ -45,6 +62,9 @@ fn main() -> io::Result<()> {
             stdout.write_all(&buf[0..n])?;
             stdout.flush()?;
         }
+        stream.shutdown_read()?;
+        stream.write_all(b"fuckkkkkk++++")?;
+        stream.shutdown_write()?;
         break;
     }
     t.join().unwrap();
