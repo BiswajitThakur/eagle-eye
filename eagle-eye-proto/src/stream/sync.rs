@@ -1,10 +1,10 @@
-use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
-use rand::Rng;
+use aes::cipher::StreamCipher;
 use std::{
-    io::{self, BufReader, BufWriter, Read, Write},
+    io::{self, BufReader, BufWriter, Write},
     net::TcpStream,
-    time::Duration,
 };
+
+use crate::job::Connection;
 
 pub struct EagleEyeStreamSync<const N: usize, R: io::Read, W: io::Write> {
     read_cipher: ctr::Ctr64LE<aes::Aes256>,
@@ -40,19 +40,35 @@ impl<const N: usize, R: io::Read, W: io::Write> io::Write for EagleEyeStreamSync
     }
 }
 
+impl<const N: usize, R: io::Read, W: io::Write> io::BufRead for EagleEyeStreamSync<N, R, W> {
+    #[inline]
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        self.reader.fill_buf()
+    }
+    #[inline]
+    fn consume(&mut self, amt: usize) {
+        self.reader.consume(amt);
+    }
+}
+
 impl<const N: usize, R: io::Read, W: io::Write> EagleEyeStreamSync<N, R, W> {
     pub fn builder() -> EagleEyeStreamBuilderSync<N, R, W> {
         EagleEyeStreamBuilderSync {
-            key: None,
-            iv: None,
+            cipher: None,
             buffer: None,
             reader: None,
             writer: None,
         }
     }
+    pub fn handle_from_listener(
+        &mut self,
+        f: fn(&mut Self) -> io::Result<Connection>,
+    ) -> io::Result<Connection> {
+        f(self)
+    }
 }
 
-macro_rules! shutdown {
+macro_rules! shutdown_eagle_eye_stream {
     ($stream:ty) => {
         impl<const N: usize> EagleEyeStreamSync<N, $stream, $stream> {
             pub fn shutdown_read(&self) -> io::Result<()> {
@@ -73,24 +89,19 @@ macro_rules! shutdown {
     };
 }
 
-shutdown!(&TcpStream);
-shutdown!(TcpStream);
+shutdown_eagle_eye_stream!(&TcpStream);
+shutdown_eagle_eye_stream!(TcpStream);
 
 pub struct EagleEyeStreamBuilderSync<const N: usize, R: io::Read, W: io::Write> {
-    key: Option<[u8; 32]>,
-    iv: Option<[u8; 16]>,
+    cipher: Option<ctr::Ctr64LE<aes::Aes256>>,
     buffer: Option<[u8; N]>,
     reader: Option<BufReader<R>>,
     writer: Option<BufWriter<W>>,
 }
 
 impl<const N: usize, R: io::Read, W: io::Write> EagleEyeStreamBuilderSync<N, R, W> {
-    pub fn key(mut self, key: [u8; 32]) -> Self {
-        self.key = Some(key);
-        self
-    }
-    pub fn iv(mut self, iv: [u8; 16]) -> Self {
-        self.iv = Some(iv);
+    pub fn cipher(mut self, cipher: ctr::Ctr64LE<aes::Aes256>) -> Self {
+        self.cipher = Some(cipher);
         self
     }
     pub fn reader(mut self, reader: BufReader<R>) -> Self {
@@ -107,15 +118,13 @@ impl<const N: usize, R: io::Read, W: io::Write> EagleEyeStreamBuilderSync<N, R, 
     }
     pub fn build(self) -> Option<EagleEyeStreamSync<N, R, W>> {
         let Self {
-            key,
-            iv,
+            cipher,
             buffer,
             reader,
             writer,
         } = self;
-
-        let cipher = ctr::Ctr64LE::<aes::Aes256>::new(&key?.into(), &iv?.into());
         let buffer = buffer.unwrap_or([0; N]);
+        let cipher = cipher?;
         Some(EagleEyeStreamSync {
             read_cipher: cipher.clone(),
             write_cipher: cipher,
@@ -124,68 +133,4 @@ impl<const N: usize, R: io::Read, W: io::Write> EagleEyeStreamBuilderSync<N, R, 
             writer: writer?,
         })
     }
-}
-
-pub fn handle_stream_server_sync<const N: usize>(
-    key: [u8; 32],
-    stream: &TcpStream,
-) -> io::Result<Option<EagleEyeStreamSync<N, &TcpStream, &TcpStream>>> {
-    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
-    let mut reader = BufReader::new(stream);
-    let mut writer = BufWriter::new(stream);
-    let iv = rand::rng().random::<[u8; 16]>();
-    let data = rand::rng().random::<[u8; 32]>();
-    let mut buf = [0u8; 32];
-    let mut cipher = ctr::Ctr64LE::<aes::Aes256>::new(&key.into(), &iv.into());
-    cipher.apply_keystream_b2b(&data, &mut buf).unwrap();
-    writer.write_all(&iv)?;
-    writer.write_all(&buf)?;
-    writer.flush()?;
-    reader.read_exact(&mut buf)?;
-    if data != buf {
-        writer.write_all(b":1:")?;
-        writer.flush()?;
-        return Ok(None);
-    }
-    writer.write_all(b":0:")?;
-    writer.flush()?;
-    cipher.seek(0);
-    stream.set_read_timeout(None)?;
-    Ok(Some(EagleEyeStreamSync {
-        read_cipher: cipher.clone(),
-        write_cipher: cipher,
-        write_buff: [0; N],
-        reader,
-        writer,
-    }))
-}
-
-pub fn handle_stream_client_sync<const N: usize>(
-    key: [u8; 32],
-    stream: &TcpStream,
-) -> io::Result<Option<EagleEyeStreamSync<N, &TcpStream, &TcpStream>>> {
-    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
-    let mut reader = BufReader::new(stream);
-    let mut writer = BufWriter::new(stream);
-    let mut iv = [0; 16];
-    let mut buf = [0u8; 32];
-    reader.read_exact(&mut iv)?;
-    reader.read_exact(&mut buf)?;
-    let mut cipher = ctr::Ctr64LE::<aes::Aes256>::new(&key.into(), &iv.into());
-    cipher.apply_keystream(&mut buf);
-    writer.write_all(&buf)?;
-    writer.flush()?;
-    reader.read_exact(&mut buf[0..3])?;
-    if &buf[0..3] != &*b":0:" {
-        return Ok(None);
-    }
-    cipher.seek(0);
-    stream.set_read_timeout(None)?;
-    Ok(Some(EagleEyeStreamSync {
-        read_cipher: cipher.clone(),
-        write_cipher: cipher.clone(),
-        write_buff: [0; N],
-        reader,
-        writer,
-    }))
 }
