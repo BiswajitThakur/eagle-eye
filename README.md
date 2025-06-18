@@ -20,13 +20,11 @@ Access storage, camera, execute cmd, install application on your other devices c
  +-----------------------------------------+
         |                   ^
         | AES 256           |
-        | encrypted         |
-        | eagle-eye         |  AES 256
-        | request           |  encrypted
-        |     +             |  eagle-eye
-        | ( access key      |  response
-        | of User 2's       |
-        |   device )        |
+        | encrypted         |  AES 256
+        | eagle-eye         |  encrypted
+        | request           |  eagle-eye
+        |                   |  response
+        |                   |
         |                   |
         v                   |
  +-----------------------------------------+
