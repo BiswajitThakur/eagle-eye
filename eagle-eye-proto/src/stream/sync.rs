@@ -4,7 +4,10 @@ use std::{
     net::TcpStream,
 };
 
-use crate::job::Connection;
+use crate::{
+    Connection,
+    task::sync::{ClientTaskSync, ServerTaskSync},
+};
 
 pub struct EagleEyeStreamSync<const N: usize, R: io::Read, W: io::Write> {
     read_cipher: ctr::Ctr64LE<aes::Aes256>,
@@ -51,7 +54,30 @@ impl<const N: usize, R: io::Read, W: io::Write> io::BufRead for EagleEyeStreamSy
     }
 }
 
+impl<const N: usize, R: io::Read, W: io::Write> ServerTaskSync<&mut EagleEyeStreamSync<N, R, W>>
+    for &mut EagleEyeStreamSync<N, R, W>
+{
+    fn id(&self) -> &'static str {
+        todo!()
+    }
+    fn execute(&self, stream: &mut EagleEyeStreamSync<N, R, W>) -> io::Result<Connection> {
+        todo!()
+    }
+}
+
 impl<const N: usize, R: io::Read, W: io::Write> EagleEyeStreamSync<N, R, W> {
+    pub fn send_task<T: for<'a> ClientTaskSync<&'a mut Self>>(
+        &mut self,
+        task: T,
+    ) -> io::Result<()> {
+        task.execute(self)
+    }
+    pub fn execute_task(
+        &mut self,
+        task: &Box<dyn for<'a> ServerTaskSync<&'a mut Self>>,
+    ) -> io::Result<Connection> {
+        task.execute(self)
+    }
     pub fn builder() -> EagleEyeStreamBuilderSync<N, R, W> {
         EagleEyeStreamBuilderSync {
             cipher: None,
