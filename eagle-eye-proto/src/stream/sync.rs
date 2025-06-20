@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     Connection,
-    task::sync::{ClientTaskSync, ServerTaskSync},
+    task::{ExecuteResult, TaskSync},
 };
 
 pub struct EagleEyeStreamSync<const N: usize, R: io::Read, W: io::Write> {
@@ -54,6 +54,7 @@ impl<const N: usize, R: io::Read, W: io::Write> io::BufRead for EagleEyeStreamSy
     }
 }
 
+/*
 impl<const N: usize, R: io::Read, W: io::Write> ServerTaskSync<&mut EagleEyeStreamSync<N, R, W>>
     for &mut EagleEyeStreamSync<N, R, W>
 {
@@ -64,20 +65,9 @@ impl<const N: usize, R: io::Read, W: io::Write> ServerTaskSync<&mut EagleEyeStre
         todo!()
     }
 }
+*/
 
 impl<const N: usize, R: io::Read, W: io::Write> EagleEyeStreamSync<N, R, W> {
-    pub fn send_task<T: for<'a> ClientTaskSync<&'a mut Self>>(
-        &mut self,
-        task: T,
-    ) -> io::Result<()> {
-        task.execute(self)
-    }
-    pub fn execute_task(
-        &mut self,
-        task: &Box<dyn for<'a> ServerTaskSync<&'a mut Self>>,
-    ) -> io::Result<Connection> {
-        task.execute(self)
-    }
     pub fn builder() -> EagleEyeStreamBuilderSync<N, R, W> {
         EagleEyeStreamBuilderSync {
             cipher: None,
@@ -85,6 +75,27 @@ impl<const N: usize, R: io::Read, W: io::Write> EagleEyeStreamSync<N, R, W> {
             reader: None,
             writer: None,
         }
+    }
+    pub fn send_task<U: io::Write, E: io::Write, T: for<'a> TaskSync<&'a mut Self, U, E>>(
+        &mut self,
+        task: T,
+        ok: U,
+        err: E,
+    ) -> io::Result<ExecuteResult> {
+        let result = task.execute(self, ok, err)?;
+        let flag: u8 = 0b00000000;
+        self.write_all(&flag.to_be_bytes())?;
+        Ok(result)
+    }
+    pub fn end(&mut self) -> io::Result<()> {
+        let flag: u8 = 0b01000000;
+        self.write_all(&flag.to_be_bytes())?;
+        Ok(())
+    }
+    pub fn stop_server(&mut self) -> io::Result<()> {
+        let flag: u8 = 0b11000000;
+        self.write_all(&flag.to_be_bytes())?;
+        Ok(())
     }
     pub fn handle_from_listener(
         &mut self,

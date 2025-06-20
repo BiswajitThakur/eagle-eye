@@ -2,12 +2,18 @@ use std::io;
 
 use crate::Connection;
 
-pub trait ServerTaskSync<T: io::Read + io::Write> {
-    fn id(&self) -> &'static str;
-    fn execute(&self, stream: T) -> io::Result<Connection>;
+#[derive(Debug, Clone)]
+pub enum ExecuteResult {
+    Ok,
+    Error(String),
 }
 
-pub trait ClientTaskSync<T: io::Read + io::Write> {
-    fn id(&self) -> &'static str;
-    fn execute(&self, stream: T) -> io::Result<()>;
+pub trait TaskSync<T: io::Read + io::Write, W: io::Write, E: io::Write> {
+    fn id() -> &'static str;
+    fn execute(&self, stream: T, ok: W, err: E) -> io::Result<ExecuteResult>;
+    fn execute_on_listener(mut stream: T) -> io::Result<Connection> {
+        // response
+        // <0 - success | 1 - faild>
+        todo!()
+    }
 }

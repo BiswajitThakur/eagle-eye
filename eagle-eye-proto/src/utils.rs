@@ -27,6 +27,10 @@ pub fn handle_stream_server_sync<'a, const N: usize>(
     writer.flush()?;
     reader.read_exact(&mut buf)?;
     if data != buf {
+        #[cfg(debug_assertions)]
+        {
+            eprintln!("Wrong Password");
+        }
         writer.write_all(b":1:")?;
         writer.flush()?;
         return Ok(None);
@@ -40,6 +44,10 @@ pub fn handle_stream_server_sync<'a, const N: usize>(
         .reader(reader)
         .writer(writer)
         .build();
+    #[cfg(debug_assertions)]
+    {
+        println!("Connect Success");
+    }
     Ok(e_stream)
 }
 

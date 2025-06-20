@@ -1,2 +1,4 @@
-pub mod r#async;
-pub mod sync;
+mod r#async;
+mod sync;
+
+pub use sync::{ExecuteResult, TaskSync};
