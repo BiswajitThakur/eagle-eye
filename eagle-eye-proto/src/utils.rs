@@ -1,22 +1,24 @@
-use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
-use rand::Rng;
 use std::{
     fs,
-    io::{self, BufRead, BufReader, BufWriter, Read, Write},
-    net::{TcpListener, TcpStream, ToSocketAddrs},
-    path::{Path, PathBuf},
+    io::{self, BufReader, BufWriter, Read, Write},
+    net::TcpStream,
+    path::Path,
     time::Duration,
 };
 
+use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
+use rand::Rng;
+
 use crate::stream::EagleEyeStreamSync;
 
-pub fn handle_stream_server_sync<'a, const N: usize>(
+pub fn handle_auth_on_server_sync<const N: usize, R: io::Read, W: io::Write>(
     key: [u8; 32],
-    stream: &'a TcpStream,
-) -> io::Result<Option<EagleEyeStreamSync<N, &'a TcpStream, &'a TcpStream>>> {
-    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
-    let mut reader = BufReader::new(stream);
-    let mut writer = BufWriter::new(stream);
+    reader: R,
+    writer: W,
+) -> io::Result<Option<EagleEyeStreamSync<N, R, W>>> {
+    // stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+    let mut reader = BufReader::new(reader);
+    let mut writer = BufWriter::new(writer);
     let iv = rand::rng().random::<[u8; 16]>();
     let data = rand::rng().random::<[u8; 32]>();
     let mut buf = [0u8; 32];
@@ -27,6 +29,7 @@ pub fn handle_stream_server_sync<'a, const N: usize>(
     writer.flush()?;
     reader.read_exact(&mut buf)?;
     if data != buf {
+        // TODO: remove me
         #[cfg(debug_assertions)]
         {
             eprintln!("Wrong Password");
@@ -38,12 +41,13 @@ pub fn handle_stream_server_sync<'a, const N: usize>(
     writer.write_all(b":0:")?;
     writer.flush()?;
     cipher.seek(0);
-    stream.set_read_timeout(None)?;
-    let e_stream = EagleEyeStreamSync::<N, &TcpStream, &TcpStream>::builder()
+    //stream.set_read_timeout(None)?;
+    let e_stream = EagleEyeStreamSync::<N, R, W>::builder()
         .cipher(cipher)
         .reader(reader)
         .writer(writer)
         .build();
+    // TODO: remove me
     #[cfg(debug_assertions)]
     {
         println!("Connect Success");
@@ -51,7 +55,7 @@ pub fn handle_stream_server_sync<'a, const N: usize>(
     Ok(e_stream)
 }
 
-pub fn handle_stream_client_sync<const N: usize>(
+pub fn handle_auth_on_client_sync<const N: usize>(
     key: [u8; 32],
     stream: &TcpStream,
 ) -> io::Result<Option<EagleEyeStreamSync<N, &TcpStream, &TcpStream>>> {
