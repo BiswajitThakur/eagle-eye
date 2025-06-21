@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    Connection,
+    FlowControl,
     task::{ExecuteResult, TaskSync},
 };
 
@@ -99,8 +99,8 @@ impl<const N: usize, R: io::Read, W: io::Write> EagleEyeStreamSync<N, R, W> {
     }
     pub fn handle_from_listener(
         &mut self,
-        f: fn(&mut Self) -> io::Result<Connection>,
-    ) -> io::Result<Connection> {
+        f: fn(&mut Self) -> io::Result<FlowControl>,
+    ) -> io::Result<FlowControl> {
         f(self)
     }
 }

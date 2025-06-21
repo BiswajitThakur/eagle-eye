@@ -4,7 +4,7 @@ pub mod task;
 pub mod utils;
 
 #[derive(Clone, Copy)]
-pub enum Connection {
+pub enum FlowControl {
     Close,
     Continue,
     StopServer,

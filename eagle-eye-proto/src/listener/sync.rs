@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    Connection,
+    FlowControl,
     stream::EagleEyeStreamSync,
     utils::{handle_stream_server_sync, write_log_sync},
 };
@@ -29,7 +29,7 @@ impl EagleEyeListenerSync {
     pub fn run<const N: usize>(
         self,
         addr: SocketAddr,
-        f: fn(&mut EagleEyeStreamSync<N, &TcpStream, &TcpStream>) -> io::Result<Connection>,
+        f: fn(&mut EagleEyeStreamSync<N, &TcpStream, &TcpStream>) -> io::Result<FlowControl>,
     ) -> io::Result<()> {
         let listener = TcpListener::bind(addr)?;
         let mut is_exit = false;
@@ -39,9 +39,9 @@ impl EagleEyeListenerSync {
                     let mut e_stream = handle_stream_server_sync::<N>(self.key, &stream)?.unwrap();
                     loop {
                         match f(&mut e_stream) {
-                            Ok(Connection::Continue) => continue,
-                            Ok(Connection::Close) => break,
-                            Ok(Connection::StopServer) => {
+                            Ok(FlowControl::Continue) => continue,
+                            Ok(FlowControl::Close) => break,
+                            Ok(FlowControl::StopServer) => {
                                 is_exit = true;
                                 break;
                             }

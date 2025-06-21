@@ -4,7 +4,7 @@ use std::{
 };
 
 use eagle_eye_proto::{
-    Connection,
+    FlowControl,
     listener::EagleEyeListenerSync,
     stream::EagleEyeStreamSync,
     task::{ExecuteResult, TaskSync},
@@ -54,10 +54,10 @@ fn main() -> io::Result<()> {
 
 fn handler<const N: usize>(
     stream: &mut EagleEyeStreamSync<N, &TcpStream, &TcpStream>,
-) -> io::Result<Connection> {
+) -> io::Result<FlowControl> {
     hh(stream)
 }
 
-fn hh<T: io::Read + io::Write>(stream: T) -> io::Result<Connection> {
+fn hh<T: io::Read + io::Write>(stream: T) -> io::Result<FlowControl> {
     todo!()
 }
