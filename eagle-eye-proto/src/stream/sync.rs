@@ -1,12 +1,7 @@
 use aes::cipher::StreamCipher;
 use std::{
-    io::{self, BufReader, BufWriter, Read, Write},
+    io::{self, BufReader, BufWriter, Write},
     net::TcpStream,
-};
-
-use crate::{
-    FlowControl,
-    task::{ExecuteResult, TaskSync},
 };
 
 pub struct EagleEyeStreamSync<const N: usize, R: io::Read, W: io::Write> {
@@ -75,47 +70,6 @@ impl<const N: usize, R: io::Read, W: io::Write> EagleEyeStreamSync<N, R, W> {
             reader: None,
             writer: None,
         }
-    }
-    pub fn send_task<U: io::Write, E: io::Write, T: for<'a> TaskSync<&'a mut Self, U, E>>(
-        &mut self,
-        task: T,
-        ok: U,
-        err: E,
-    ) -> io::Result<ExecuteResult> {
-        let mut buf = [0; 1];
-        writeln!(self, "{}", <T as TaskSync<&mut Self, U, E>>::id())?;
-        self.write_all(&FlowControl::Continue.to_be_bytes())?;
-        self.flush()?;
-        self.read_exact(&mut buf)?;
-        let flow = FlowControl::try_from(buf);
-        if flow.is_err() {
-            return Err(io::Error::other("Invalid Flow"));
-        }
-        match flow.unwrap() {
-            FlowControl::Close | FlowControl::StopServer => {
-                self.read_exact(&mut buf)?;
-                let exe = ExecuteResult::try_from(buf);
-                if exe.is_err() {
-                    return Err(io::Error::other("Invalid Execution Result"));
-                }
-                Ok(exe.unwrap())
-            }
-            FlowControl::Continue => task.execute(self, ok, err),
-        }
-    }
-    pub fn end(&mut self) -> io::Result<()> {
-        self.write_all(b":end:\n")?;
-        self.flush()
-    }
-    pub fn stop_server(&mut self) -> io::Result<()> {
-        self.write_all(b":stop-server:\n")?;
-        self.flush()
-    }
-    pub fn handle_from_listener(
-        &mut self,
-        f: fn(&mut Self) -> io::Result<FlowControl>,
-    ) -> io::Result<FlowControl> {
-        f(self)
     }
 }
 

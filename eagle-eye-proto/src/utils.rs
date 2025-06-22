@@ -1,9 +1,7 @@
 use std::{
     fs,
     io::{self, BufReader, BufWriter, Read, Write},
-    net::TcpStream,
     path::Path,
-    time::Duration,
 };
 
 use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
@@ -11,7 +9,7 @@ use rand::Rng;
 
 use crate::stream::EagleEyeStreamSync;
 
-pub fn handle_auth_on_server_sync<const N: usize, R: io::Read, W: io::Write>(
+pub(crate) fn handle_auth_on_server_sync<const N: usize, R: io::Read, W: io::Write>(
     key: [u8; 32],
     reader: R,
     writer: W,
@@ -55,13 +53,13 @@ pub fn handle_auth_on_server_sync<const N: usize, R: io::Read, W: io::Write>(
     Ok(e_stream)
 }
 
-pub fn handle_auth_on_client_sync<const N: usize>(
+pub(crate) fn handle_auth_on_client_sync<const N: usize, R: io::Read, W: io::Write>(
     key: [u8; 32],
-    stream: &TcpStream,
-) -> io::Result<Option<EagleEyeStreamSync<N, &TcpStream, &TcpStream>>> {
-    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
-    let mut reader = BufReader::new(stream);
-    let mut writer = BufWriter::new(stream);
+    reader: R,
+    writer: W,
+) -> io::Result<Option<EagleEyeStreamSync<N, R, W>>> {
+    let mut reader = BufReader::new(reader);
+    let mut writer = BufWriter::new(writer);
     let mut iv = [0; 16];
     let mut buf = [0u8; 32];
     reader.read_exact(&mut iv)?;
@@ -75,8 +73,7 @@ pub fn handle_auth_on_client_sync<const N: usize>(
         return Ok(None);
     }
     cipher.seek(0);
-    stream.set_read_timeout(None)?;
-    let e_stream = EagleEyeStreamSync::<N, &TcpStream, &TcpStream>::builder()
+    let e_stream = EagleEyeStreamSync::<N, R, W>::builder()
         .cipher(cipher)
         .reader(reader)
         .writer(writer)

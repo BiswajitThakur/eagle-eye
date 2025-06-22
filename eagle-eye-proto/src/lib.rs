@@ -1,10 +1,11 @@
-pub mod listener;
+pub mod client;
+pub mod server;
 pub mod stream;
 pub mod task;
 pub mod utils;
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlowControl {
     Close = 0,
     Continue = 1,
