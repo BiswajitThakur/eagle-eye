@@ -1,14 +1,17 @@
+#[cfg(feature = "sync")]
+use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
+#[cfg(feature = "sync")]
+use rand::Rng;
+#[cfg(feature = "sync")]
 use std::{
     fs,
     io::{self, BufReader, BufWriter, Read, Write},
     path::Path,
 };
 
-use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
-use rand::Rng;
-
+#[cfg(feature = "sync")]
 use crate::stream::EagleEyeStreamSync;
-
+#[cfg(feature = "sync")]
 pub(crate) fn handle_auth_on_server_sync<const N: usize, R: io::Read, W: io::Write>(
     key: [u8; 32],
     reader: R,
@@ -41,6 +44,7 @@ pub(crate) fn handle_auth_on_server_sync<const N: usize, R: io::Read, W: io::Wri
     Ok(e_stream)
 }
 
+#[cfg(feature = "sync")]
 pub(crate) fn handle_auth_on_client_sync<const N: usize, R: io::Read, W: io::Write>(
     key: [u8; 32],
     reader: R,
@@ -70,6 +74,7 @@ pub(crate) fn handle_auth_on_client_sync<const N: usize, R: io::Read, W: io::Wri
 }
 
 // TODO: write date and time in log
+#[cfg(feature = "sync")]
 pub(crate) fn write_log_sync<P: AsRef<Path>>(path: Option<P>, err: io::Error) {
     if path.is_none() {
         return;

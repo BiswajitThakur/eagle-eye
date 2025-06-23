@@ -186,6 +186,14 @@ name = "eagle-eye-daemon"
 version = "0.1.0"
 dependencies = [
  "eagle-eye-broadcaster",
+ "eagle-eye-proto",
+]
+
+[[package]]
+name = "eagle-eye-jobs"
+version = "0.1.0"
+dependencies = [
+ "eagle-eye-proto",
 ]
 
 [[package]]

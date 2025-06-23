@@ -6,6 +6,8 @@ pub enum ExecuteResult {
     Ok = 0,
     InvalidRequest = 1,
     UnknownTask = 2,
+    InvalidPath = 3,
+    Faild = 4,
 }
 
 /*
@@ -29,6 +31,8 @@ impl TryFrom<[u8; 1]> for ExecuteResult {
             [0] => Ok(Self::Ok),
             [1] => Ok(Self::InvalidRequest),
             [2] => Ok(Self::UnknownTask),
+            [3] => Ok(Self::InvalidPath),
+            [4] => Ok(Self::Faild),
             _ => Err(()),
         }
     }
