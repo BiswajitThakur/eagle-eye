@@ -14,7 +14,6 @@ pub(crate) fn handle_auth_on_server_sync<const N: usize, R: io::Read, W: io::Wri
     reader: R,
     writer: W,
 ) -> io::Result<Option<EagleEyeStreamSync<N, R, W>>> {
-    // stream.set_read_timeout(Some(Duration::from_secs(1)))?;
     let mut reader = BufReader::new(reader);
     let mut writer = BufWriter::new(writer);
     let iv = rand::rng().random::<[u8; 16]>();
@@ -27,11 +26,6 @@ pub(crate) fn handle_auth_on_server_sync<const N: usize, R: io::Read, W: io::Wri
     writer.flush()?;
     reader.read_exact(&mut buf)?;
     if data != buf {
-        // TODO: remove me
-        #[cfg(debug_assertions)]
-        {
-            eprintln!("Wrong Password");
-        }
         writer.write_all(b":1:")?;
         writer.flush()?;
         return Ok(None);
@@ -39,17 +33,11 @@ pub(crate) fn handle_auth_on_server_sync<const N: usize, R: io::Read, W: io::Wri
     writer.write_all(b":0:")?;
     writer.flush()?;
     cipher.seek(0);
-    //stream.set_read_timeout(None)?;
     let e_stream = EagleEyeStreamSync::<N, R, W>::builder()
         .cipher(cipher)
         .reader(reader)
         .writer(writer)
         .build();
-    // TODO: remove me
-    #[cfg(debug_assertions)]
-    {
-        println!("Connect Success");
-    }
     Ok(e_stream)
 }
 
@@ -69,7 +57,7 @@ pub(crate) fn handle_auth_on_client_sync<const N: usize, R: io::Read, W: io::Wri
     writer.write_all(&buf)?;
     writer.flush()?;
     reader.read_exact(&mut buf[0..3])?;
-    if &buf[0..3] != &*b":0:" {
+    if buf[0..3] != *b":0:" {
         return Ok(None);
     }
     cipher.seek(0);
@@ -94,7 +82,5 @@ pub(crate) fn write_log_sync<P: AsRef<Path>>(path: Option<P>, err: io::Error) {
     if writeln!(w, "------------------------").is_err() {
         return;
     }
-    if writeln!(w, "{}", err).is_err() {
-        return;
-    }
+    let _ = writeln!(w, "{}", err);
 }

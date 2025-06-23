@@ -1,7 +1,5 @@
 use std::io;
 
-use crate::FlowControl;
-
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecuteResult {
@@ -49,22 +47,21 @@ pub trait TaskSync<T: io::Read + io::Write, W: io::Write, E: io::Write> {
 }
 
 /// A synchronous task registry that maps string IDs to handler functions.
-///
-/// Each task handler takes a generic input `T` and returns a [`Result`] with a tuple
-/// `(FlowControl, T)` where [`FlowControl`] represents how the stream/server should
-/// behave after the task, and `T` is the updated context/state.
+#[allow(clippy::type_complexity)]
 pub struct TaskRegisterySync<T> {
-    _default: fn(T) -> io::Result<(FlowControl, T)>,
-    tasks: Vec<(&'static str, fn(T) -> io::Result<(FlowControl, T)>)>,
+    inner: Vec<(&'static str, fn(T) -> io::Result<T>)>,
+}
+
+impl<T> Default for TaskRegisterySync<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T> TaskRegisterySync<T> {
-    /// Create a new [`TaskRegisterySync`] with a given default fallback handler.
-    pub fn new_default(default: fn(T) -> io::Result<(FlowControl, T)>) -> Self {
-        Self {
-            _default: default,
-            tasks: Vec::new(),
-        }
+    /// Create a new empty [`TaskRegisterySync`].
+    pub fn new() -> Self {
+        Self { inner: Vec::new() }
     }
     /// Registers a new task handler by ID.
     ///
@@ -73,26 +70,33 @@ impl<T> TaskRegisterySync<T> {
     /// Panics if:
     /// - the ID starts and ends with `:`
     /// - a task with the same ID already exists
-    pub fn register(&mut self, id: &'static str, f: fn(T) -> io::Result<(FlowControl, T)>) {
+    pub fn register(&mut self, id: &'static str, f: fn(T) -> io::Result<T>) {
         assert!(
             !(id.starts_with(':') && id.ends_with(':')),
             "ID should not start and end with `:`"
         );
-        for &(v, _) in self.tasks.iter() {
+        for &(v, _) in self.inner.iter() {
             assert_ne!(id, v, "already exists with this ID...");
         }
-        self.tasks.push((id, f));
-        self.tasks.sort_by(|a, b| a.0.cmp(b.0));
+        self.inner.push((id, f));
+        self.inner.sort_by(|a, b| a.0.cmp(b.0));
+    }
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+    pub fn capacity(&self) -> usize {
+        self.inner.capacity()
     }
     /// Retrieves a registered task handler by ID.
-    ///
-    /// If the ID is not found in the registry, the default handler is returned.
-    pub fn get<S: AsRef<str>>(&self, id: S) -> fn(T) -> io::Result<(FlowControl, T)> {
+    pub fn get<S: AsRef<str>>(&self, id: S) -> Option<fn(T) -> io::Result<T>> {
         let v = id.as_ref();
-        match self.tasks.binary_search_by_key(&v, |&(a, _)| a) {
-            Ok(index) => self.tasks.get(index).map(|m| m.1).unwrap_or(self._default),
-            Err(_) => self._default,
-        }
+        self.inner
+            .binary_search_by_key(&v, |&(a, _)| a)
+            .ok()
+            .map(|v| unsafe { self.inner.get_unchecked(v).1 })
     }
 }
 
@@ -106,70 +110,50 @@ mod tests {
 
     #[test]
     fn test_task_registery_sync_new_default() {
-        let registery = TaskRegisterySync::new_default(|v: i32| Ok((FlowControl::Continue, v * v)));
-        assert_eq!(registery.get("id")(7).unwrap(), (FlowControl::Continue, 49));
-
-        let registery =
-            TaskRegisterySync::new_default(|v: i32| Ok((FlowControl::StopServer, v + 10)));
-        assert_eq!(
-            registery.get("id")(7).unwrap(),
-            (FlowControl::StopServer, 17)
-        );
-
-        let registery = TaskRegisterySync::new_default(|v: i32| Ok((FlowControl::Close, v * 2)));
-        assert_eq!(registery.get("id")(7).unwrap(), (FlowControl::Close, 14));
+        let registery = TaskRegisterySync::<fn(i32) -> io::Result<(FlowControl, i32)>>::new();
+        assert!(registery.get("id").is_none());
+        assert_eq!(registery.len(), 0);
     }
 
     #[test]
     fn test_task_registery_sync_register_1() {
-        let mut registery =
-            TaskRegisterySync::new_default(|v: i32| Ok((FlowControl::Continue, v * v)));
-        registery.register("add-10", |v| Ok((FlowControl::Continue, v + 10)));
-        registery.register("minus-10", |v| Ok((FlowControl::Close, v - 10)));
-        registery.register("mul-2", |v| Ok((FlowControl::StopServer, v * 2)));
+        let mut registery = TaskRegisterySync::default();
+        registery.register("add-10", |v| Ok(v + 10));
+        registery.register("minus-10", |v| Ok(v - 10));
+        registery.register("mul-2", |v| Ok(v * 2));
         registery.register("error", |_| Err(io::Error::other("unknown error")));
 
-        assert_eq!(
-            registery.get("not-found")(10).unwrap(),
-            (FlowControl::Continue, 100)
-        );
+        assert!(registery.get("not-found").is_none());
 
-        assert_eq!(
-            registery.get("add-10")(1).unwrap(),
-            (FlowControl::Continue, 11)
-        );
+        let f = registery.get("add-10").unwrap();
+        assert_eq!(f(1).unwrap(), 11);
 
-        assert_eq!(
-            registery.get("minus-10")(11).unwrap(),
-            (FlowControl::Close, 1)
-        );
+        let f = registery.get("minus-10").unwrap();
+        assert_eq!(f(11).unwrap(), 1);
 
-        assert_eq!(
-            registery.get("mul-2")(202).unwrap(),
-            (FlowControl::StopServer, 404)
-        );
+        let f = registery.get("mul-2").unwrap();
+        assert_eq!(f(202).unwrap(), 404);
 
-        assert!(registery.get("error")(10).is_err());
+        let f = registery.get("error").unwrap();
+        assert!(f(10).is_err());
     }
 
     #[test]
     #[should_panic]
     fn test_task_registery_sync_register_2() {
-        let mut registery =
-            TaskRegisterySync::new_default(|v: i32| Ok((FlowControl::Continue, v * v)));
+        let mut registery = TaskRegisterySync::new();
 
-        registery.register("add-10", |v| Ok((FlowControl::Continue, v + 10)));
+        registery.register("add-10", |v: i32| Ok(v + 10));
         // panic, id already exists
-        registery.register("add-10", |v| Ok((FlowControl::Continue, v + 10)));
+        registery.register("add-10", |v| Ok(v + 10));
     }
 
     #[test]
     #[should_panic]
     fn test_task_registery_sync_register_3() {
-        let mut registery =
-            TaskRegisterySync::new_default(|v: i32| Ok((FlowControl::Continue, v * v)));
+        let mut registery = TaskRegisterySync::new();
 
         // panic, id starts and ends with `:`
-        registery.register(":add-10:", |v| Ok((FlowControl::Continue, v + 10)));
+        registery.register(":add-10:", |v: usize| Ok(v + 10));
     }
 }

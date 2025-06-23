@@ -63,6 +63,23 @@ impl<const N: usize, R: io::Read, W: io::Write> ServerTaskSync<&mut EagleEyeStre
 */
 
 impl<const N: usize, R: io::Read, W: io::Write> EagleEyeStreamSync<N, R, W> {
+    #[inline]
+    pub fn get_ref_reader(&self) -> &R {
+        self.reader.get_ref()
+    }
+    #[inline]
+    pub fn get_mut_reader(&mut self) -> &mut R {
+        self.reader.get_mut()
+    }
+    #[inline]
+    pub fn get_ref_writer(&self) -> &W {
+        self.writer.get_ref()
+    }
+    #[inline]
+    pub fn get_mut_writer(&mut self) -> &mut W {
+        self.writer.get_mut()
+    }
+    #[inline]
     pub fn builder() -> EagleEyeStreamBuilderSync<N, R, W> {
         EagleEyeStreamBuilderSync {
             cipher: None,

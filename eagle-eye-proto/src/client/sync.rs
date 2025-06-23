@@ -52,14 +52,7 @@ impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
             return Err(io::Error::other("Invalid Flow"));
         }
         match flow.unwrap() {
-            FlowControl::Close | FlowControl::StopServer => {
-                self.read_exact(&mut buf)?;
-                let exe = ExecuteResult::try_from(buf);
-                if exe.is_err() {
-                    return Err(io::Error::other("Invalid Execution Result"));
-                }
-                Ok(exe.unwrap())
-            }
+            FlowControl::Close | FlowControl::StopServer => Ok(ExecuteResult::UnknownTask),
             FlowControl::Continue => task.execute_on_sender(self, ok, err),
         }
     }
@@ -77,6 +70,12 @@ impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
 
 pub struct ClientSync<const N: usize> {
     log: Option<PathBuf>,
+}
+
+impl<const N: usize> Default for ClientSync<N> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const N: usize> ClientSync<N> {

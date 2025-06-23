@@ -1,4 +1,7 @@
-use std::{io, path::PathBuf};
+use std::{
+    io::{self, Write},
+    path::PathBuf,
+};
 
 use crate::{
     FlowControl,
@@ -25,10 +28,6 @@ impl<T> EagleEyeServerSync<T> {
         self.log = Some(path.into());
         self
     }
-    pub fn handle_stream<S: AsRef<str>>(&self, id: S, stream: T) -> io::Result<(FlowControl, T)> {
-        let fun = self.handler.get(id);
-        fun(stream)
-    }
 }
 
 impl<const N: usize, R: io::Read, W: io::Write> EagleEyeServerSync<EagleEyeStreamSync<N, R, W>> {
@@ -44,15 +43,6 @@ impl<const N: usize, R: io::Read, W: io::Write> EagleEyeServerSync<EagleEyeStrea
         }
         Ok(result)
     }
-    fn is_know_task<U: io::Read>(mut stream: U) -> io::Result<bool> {
-        let mut buf = [0; 1];
-        stream.read_exact(&mut buf)?;
-        let flow = FlowControl::try_from(buf);
-        if flow.is_err() {
-            return Err(io::Error::other("Invalid Flow"));
-        }
-        Ok(flow.unwrap() == FlowControl::Continue)
-    }
     pub fn run<I: Iterator<Item = io::Result<(R, W)>>>(&self, incoming: I) -> io::Result<()> {
         let mut should_stop_server = false;
         for stream_result in incoming {
@@ -67,12 +57,8 @@ impl<const N: usize, R: io::Read, W: io::Write> EagleEyeServerSync<EagleEyeStrea
                                 continue;
                             }
                         };
-                    let mut flow;
                     loop {
                         let id = Self::read_id(&mut e_stream).unwrap();
-                        if id.is_empty() {
-                            break;
-                        }
                         match id.as_str() {
                             ":end:" => break,
                             ":stop-server:" => {
@@ -81,34 +67,22 @@ impl<const N: usize, R: io::Read, W: io::Write> EagleEyeServerSync<EagleEyeStrea
                             }
                             _ => {}
                         }
-                        /*
-                        let is_knon_task = match Self::is_know_task(&mut e_stream) {
+                        let fun = self.handler.get(id);
+                        if fun.is_none() {
+                            e_stream.write_all(&FlowControl::Close.to_be_bytes())?;
+                            e_stream.flush()?;
+                            continue;
+                        } else {
+                            e_stream.write_all(&FlowControl::Continue.to_be_bytes())?;
+                            e_stream.flush()?;
+                        };
+                        e_stream = match fun.unwrap()(e_stream) {
                             Ok(v) => v,
                             Err(err) => {
                                 write_log_sync(self.log.as_ref(), err);
                                 break;
                             }
                         };
-                        dbg!(is_knon_task);
-                        if !is_knon_task {
-                            break;
-                        }*/
-                        let fun = self.handler.get(id);
-                        (flow, e_stream) = match fun(e_stream) {
-                            Ok((u, v)) => (u, v),
-                            Err(err) => {
-                                write_log_sync(self.log.as_ref(), err);
-                                break;
-                            }
-                        };
-                        match flow {
-                            FlowControl::Close => break,
-                            FlowControl::Continue => continue,
-                            FlowControl::StopServer => {
-                                should_stop_server = true;
-                                break;
-                            }
-                        }
                     }
                 }
                 Err(err) => write_log_sync(self.log.as_ref(), err),
