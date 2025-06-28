@@ -39,6 +39,9 @@ impl TryFrom<[u8; 1]> for ExecuteResult {
 }
 
 impl ExecuteResult {
+    pub fn is_success(&self) -> bool {
+        &Self::Ok == self
+    }
     pub fn to_be_bytes(&self) -> [u8; 1] {
         let v = *self as u8;
         v.to_be_bytes()
@@ -53,6 +56,8 @@ pub trait TaskSync<T: io::Read + io::Write, W: io::Write, E: io::Write> {
 /// A synchronous task registry that maps string IDs to handler functions.
 #[allow(clippy::type_complexity)]
 pub struct TaskRegisterySync<T> {
+    pre_handler: Option<fn(T) -> io::Result<T>>,
+    post_handler: Option<fn(T) -> io::Result<()>>,
     inner: Vec<(&'static str, fn(T) -> io::Result<T>)>,
 }
 
@@ -65,7 +70,29 @@ impl<T> Default for TaskRegisterySync<T> {
 impl<T> TaskRegisterySync<T> {
     /// Create a new empty [`TaskRegisterySync`].
     pub fn new() -> Self {
-        Self { inner: Vec::new() }
+        Self {
+            pre_handler: None,
+            post_handler: None,
+            inner: Vec::new(),
+        }
+    }
+    fn pre_handler_default(stream: T) -> io::Result<T> {
+        Ok(stream)
+    }
+    pub fn set_pre_handler(&mut self, f: fn(T) -> io::Result<T>) {
+        self.pre_handler = Some(f);
+    }
+    pub fn get_pre_handler(&mut self) -> Option<fn(T) -> io::Result<T>> {
+        self.pre_handler
+    }
+    fn post_handler_default(stream: T) -> io::Result<()> {
+        Ok(())
+    }
+    pub fn set_post_handler(&mut self, f: fn(T) -> io::Result<()>) {
+        self.post_handler = Some(f);
+    }
+    pub fn get_post_handler(&mut self) -> Option<fn(T) -> Result<(), io::Error>> {
+        self.post_handler
     }
     /// Registers a new task handler by ID.
     ///

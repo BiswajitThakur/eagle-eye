@@ -182,10 +182,19 @@ name = "eagle-eye-cli"
 version = "0.1.0"
 
 [[package]]
+name = "eagle-eye-client"
+version = "0.1.0"
+dependencies = [
+ "eagle-eye-jobs",
+ "eagle-eye-proto",
+]
+
+[[package]]
 name = "eagle-eye-daemon"
 version = "0.1.0"
 dependencies = [
  "eagle-eye-broadcaster",
+ "eagle-eye-jobs",
  "eagle-eye-proto",
 ]
 

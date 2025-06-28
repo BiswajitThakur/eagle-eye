@@ -1,6 +1,7 @@
 use std::{ffi::OsString, io, str::FromStr};
 
-use eagle_eye_proto::task::{ExecuteResult, TaskSync};
+use eagle_eye_proto::task::ExecuteResult;
+use eagle_eye_proto::task::TaskSync;
 
 pub struct RemoveFile {
     path: OsString,
@@ -14,7 +15,7 @@ impl<T: Into<OsString>> From<T> for RemoveFile {
 
 impl<T: io::Read + io::Write, W: io::Write, E: io::Write> TaskSync<T, W, E> for RemoveFile {
     fn id() -> &'static str {
-        "remove-file"
+        Self::_id()
     }
     fn execute_on_sender(&self, mut stream: T, _ok: W, _err: E) -> std::io::Result<ExecuteResult> {
         let mut buf = [0; 1];
@@ -36,6 +37,9 @@ impl<T: io::Read + io::Write, W: io::Write, E: io::Write> TaskSync<T, W, E> for 
 impl RemoveFile {
     pub fn new(path: OsString) -> Self {
         Self { path }
+    }
+    pub fn _id() -> &'static str {
+        "remove-file"
     }
     pub fn execute_on_sender<T: io::Read + io::Write>(mut stream: T) -> io::Result<T> {
         let mut buf = [0; 8];

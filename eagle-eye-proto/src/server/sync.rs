@@ -28,6 +28,9 @@ impl<T> EagleEyeServerSync<T> {
         self.log = Some(path.into());
         self
     }
+    pub fn register(&mut self, id: &'static str, f: fn(T) -> io::Result<T>) {
+        self.handler.register(id, f);
+    }
 }
 
 impl<const N: usize, R: io::Read, W: io::Write> EagleEyeServerSync<EagleEyeStreamSync<N, R, W>> {
