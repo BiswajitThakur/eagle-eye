@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Write},
+    io,
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     sync::{
         Arc,
@@ -10,43 +10,29 @@ use std::{
 
 pub struct SenderInfo {
     prefix: Vec<u8>,
+    data: Vec<u8>,
+    is_running: Arc<AtomicBool>,
     socket_addr: SocketAddr,
     broadcast_addr: SocketAddr,
     interval: Option<Arc<AtomicU64>>,
-    flags: u16, // for future uses
-    send_addr: SocketAddr,
 }
 
 impl SenderInfo {
     pub fn builder() -> SenderInfoBuilder {
         SenderInfoBuilder::default()
     }
-    pub fn send(&self, is_running: Arc<AtomicBool>) -> io::Result<()> {
+    pub fn send(&self) -> io::Result<()> {
         let Self {
             prefix,
+            data,
+            is_running,
             interval,
             socket_addr,
             broadcast_addr,
-            flags,
-            send_addr,
         } = self;
-        let version: u16 = match send_addr.ip() {
-            IpAddr::V4(_) => 4,
-            IpAddr::V6(_) => 6,
-        };
-        let mut buffer = Vec::new();
+        let mut buffer = Vec::with_capacity(prefix.len() + data.len());
         buffer.extend_from_slice(&prefix);
-        buffer.extend_from_slice(&version.to_be_bytes());
-        buffer.extend_from_slice(&flags.to_be_bytes());
-        buffer.extend_from_slice(&send_addr.port().to_be_bytes());
-        match send_addr.ip() {
-            IpAddr::V4(ipv4) => {
-                buffer.extend_from_slice(&ipv4.to_bits().to_be_bytes());
-            }
-            IpAddr::V6(ipv6) => {
-                buffer.extend_from_slice(&ipv6.to_bits().to_be_bytes());
-            }
-        }
+        buffer.extend_from_slice(&data);
         let socket = UdpSocket::bind(socket_addr)?;
         socket.set_broadcast(true)?;
         loop {
@@ -68,20 +54,22 @@ impl SenderInfo {
 
 pub struct SenderInfoBuilder {
     prefix: Vec<u8>,
+    data: Vec<u8>,
+    is_running: Arc<AtomicBool>,
     socket_addr: SocketAddr,
     broadcast_addr: SocketAddr,
     interval: Option<Arc<AtomicU64>>,
-    send_addr: SocketAddr,
 }
 
 impl Default for SenderInfoBuilder {
     fn default() -> Self {
         Self {
             prefix: Vec::new(),
+            data: Vec::new(),
+            is_running: Arc::new(AtomicBool::new(true)),
             socket_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0),
             broadcast_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)), 7511),
             interval: None,
-            send_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0),
         }
     }
 }
@@ -91,12 +79,16 @@ impl SenderInfoBuilder {
         self.prefix = prefix.into();
         self
     }
-    pub fn interval(mut self, time: Arc<AtomicU64>) -> Self {
-        self.interval = Some(time);
+    pub fn data<T: Into<Vec<u8>>>(mut self, data: T) -> Self {
+        self.data = data.into();
         self
     }
-    pub fn send_addr(mut self, addr: SocketAddr) -> Self {
-        self.send_addr = addr;
+    pub fn is_running(mut self, is_running: Arc<AtomicBool>) -> Self {
+        self.is_running = is_running;
+        self
+    }
+    pub fn interval(mut self, time: Arc<AtomicU64>) -> Self {
+        self.interval = Some(time);
         self
     }
     pub fn socket_addr(mut self, addr: SocketAddr) -> Self {
@@ -110,11 +102,11 @@ impl SenderInfoBuilder {
     pub fn build(self) -> SenderInfo {
         SenderInfo {
             prefix: self.prefix,
+            data: self.data,
+            is_running: self.is_running,
             socket_addr: self.socket_addr,
             broadcast_addr: self.broadcast_addr,
             interval: self.interval,
-            flags: 0,
-            send_addr: self.send_addr,
         }
     }
 }

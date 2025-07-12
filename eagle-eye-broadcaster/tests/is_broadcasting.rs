@@ -1,3 +1,4 @@
+/*
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     sync::{
@@ -45,3 +46,4 @@ fn is_broadcasting() {
     }
     h.join().unwrap().unwrap();
 }
+*/

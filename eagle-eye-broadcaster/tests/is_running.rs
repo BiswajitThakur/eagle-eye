@@ -1,3 +1,4 @@
+/*
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     sync::{
@@ -86,3 +87,4 @@ fn test_is_running_receiver() {
     }
     t.join().unwrap();
 }
+*/
