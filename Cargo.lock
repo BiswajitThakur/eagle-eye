@@ -185,8 +185,16 @@ version = "0.1.0"
 name = "eagle-eye-client"
 version = "0.1.0"
 dependencies = [
+ "eagle-eye-broadcaster",
  "eagle-eye-jobs",
  "eagle-eye-proto",
+]
+
+[[package]]
+name = "eagle-eye-device"
+version = "0.1.0"
+dependencies = [
+ "eagle-eye-broadcaster",
 ]
 
 [[package]]

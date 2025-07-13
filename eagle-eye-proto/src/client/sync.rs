@@ -1,4 +1,5 @@
 use std::{
+    fmt,
     io::{self, Read, Write},
     net::{SocketAddr, TcpStream},
     path::PathBuf,
@@ -44,7 +45,7 @@ impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
         err: E,
     ) -> io::Result<ExecuteResult> {
         let mut buf = [0; 1];
-        writeln!(self, "{}", <T as TaskSync<&mut Self, U, E>>::id())?;
+        write!(self, "{}\n", T::id())?;
         self.flush()?;
         self.read_exact(&mut buf)?;
         let flow = FlowControl::try_from(buf);
@@ -53,7 +54,7 @@ impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
         }
         match flow.unwrap() {
             FlowControl::Close | FlowControl::StopServer => Ok(ExecuteResult::UnknownTask),
-            FlowControl::Continue => task.execute_on_sender(self, ok, err),
+            FlowControl::Continue => task.execute_on_client(self, ok, err),
         }
     }
 
@@ -68,25 +69,38 @@ impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
     }
 }
 
-pub struct ClientSync<const N: usize> {
+pub struct ClientSync {
+    id: u128,
+    // devices: Vec<Device>,
     log: Option<PathBuf>,
 }
 
-impl<const N: usize> Default for ClientSync<N> {
+impl Default for ClientSync {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const N: usize> ClientSync<N> {
+impl ClientSync {
     pub fn new() -> Self {
-        Self { log: None }
+        Self {
+            id: 0,
+            // devices: Vec::new(),
+            log: None,
+        }
     }
+    /*
+    pub fn get_device_by_id(&self, id: u128) -> Option<&Device> {
+        self.devices.iter().find(|&v| v.id == id)
+    }
+    pub fn push_device(&mut self, device: Device) {
+        self.devices.push(device);
+    }*/
     pub fn log<T: Into<PathBuf>>(mut self, path: T) -> Self {
         self.log = Some(path.into());
         self
     }
-    pub fn connect(
+    pub fn connect<const N: usize>(
         &self,
         key: [u8; 32],
         addr: SocketAddr,

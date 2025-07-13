@@ -1,0 +1,8 @@
+[package]
+name = "eagle-eye-device"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eagle-eye-broadcaster = { path = "../eagle-eye-broadcaster" }
+

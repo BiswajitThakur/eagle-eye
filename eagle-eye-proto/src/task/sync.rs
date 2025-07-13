@@ -48,9 +48,8 @@ impl ExecuteResult {
     }
 }
 
-pub trait TaskSync<T: io::Read + io::Write, W: io::Write, E: io::Write> {
-    fn id() -> &'static str;
-    fn execute_on_sender(&self, stream: T, ok: W, err: E) -> io::Result<ExecuteResult>;
+pub trait TaskSync<T: io::Read + io::Write, W: io::Write, E: io::Write>: super::GetId {
+    fn execute_on_client(&self, stream: T, ok: W, err: E) -> io::Result<ExecuteResult>;
 }
 
 /// A synchronous task registry that maps string IDs to handler functions.

@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+eagle-eye-broadcaster = { path = "../eagle-eye-broadcaster" }
 eagle-eye-jobs = { path = "../eagle-eye-jobs" }
 eagle-eye-proto = { path = "../eagle-eye-proto" }

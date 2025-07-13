@@ -1,7 +1,7 @@
 use std::{ffi::OsString, io, str::FromStr};
 
 use eagle_eye_proto::task::ExecuteResult;
-use eagle_eye_proto::task::TaskSync;
+use eagle_eye_proto::task::{GetId, TaskSync};
 
 pub struct RemoveFile {
     path: OsString,
@@ -13,11 +13,14 @@ impl<T: Into<OsString>> From<T> for RemoveFile {
     }
 }
 
-impl<T: io::Read + io::Write, W: io::Write, E: io::Write> TaskSync<T, W, E> for RemoveFile {
+impl GetId for RemoveFile {
     fn id() -> &'static str {
-        Self::_id()
+        "remove-file"
     }
-    fn execute_on_sender(&self, mut stream: T, _ok: W, _err: E) -> std::io::Result<ExecuteResult> {
+}
+
+impl<T: io::Read + io::Write, W: io::Write, E: io::Write> TaskSync<T, W, E> for RemoveFile {
+    fn execute_on_client(&self, mut stream: T, _ok: W, _err: E) -> std::io::Result<ExecuteResult> {
         let mut buf = [0; 1];
         let path = self.path.to_string_lossy();
         let bytes = path.as_bytes();
@@ -38,10 +41,7 @@ impl RemoveFile {
     pub fn new(path: OsString) -> Self {
         Self { path }
     }
-    pub fn _id() -> &'static str {
-        "remove-file"
-    }
-    pub fn execute_on_sender<T: io::Read + io::Write>(mut stream: T) -> io::Result<T> {
+    pub fn execute_on_server<T: io::Read + io::Write>(mut stream: T) -> io::Result<T> {
         let mut buf = [0; 8];
         stream.read_exact(&mut buf[0..2])?;
         let mut len = u16::from_be_bytes([buf[0], buf[1]]) as usize;

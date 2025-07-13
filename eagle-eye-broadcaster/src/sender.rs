@@ -8,6 +8,9 @@ use std::{
     time::Duration,
 };
 
+/// ```rust
+///
+/// ```
 pub struct SenderInfo {
     prefix: Vec<u8>,
     data: Vec<u8>,

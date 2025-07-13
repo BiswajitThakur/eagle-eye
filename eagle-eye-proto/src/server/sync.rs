@@ -11,19 +11,33 @@ use crate::{
 };
 
 pub struct EagleEyeServerSync<T> {
+    id: u128,
     key: [u8; 32],
     handler: TaskRegisterySync<T>,
     log: Option<PathBuf>,
 }
 
+impl<T> Default for EagleEyeServerSync<T> {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            key: [0; 32],
+            handler: TaskRegisterySync::new(),
+            log: None,
+        }
+    }
+}
+
 impl<T> EagleEyeServerSync<T> {
     pub fn new(key: [u8; 32], handler: TaskRegisterySync<T>) -> Self {
         Self {
+            id: 0,
             key,
             handler,
             log: None,
         }
     }
+
     pub fn set_log_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.log = Some(path.into());
         self
