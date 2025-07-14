@@ -198,6 +198,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "eagle-eye-http"
+version = "0.1.0"
+
+[[package]]
 name = "eagle-eye-jobs"
 version = "0.1.0"
 dependencies = [

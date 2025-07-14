@@ -19,8 +19,8 @@ impl GetId for RemoveFile {
     }
 }
 
-impl<T: io::Read + io::Write, W: io::Write, E: io::Write> TaskSync<T, W, E> for RemoveFile {
-    fn execute_on_client(&self, mut stream: T, _ok: W, _err: E) -> std::io::Result<ExecuteResult> {
+impl<T: io::Read + io::Write, W: io::Write> TaskSync<T, W> for RemoveFile {
+    fn execute_on_client(&self, mut stream: T, _http: W) -> std::io::Result<ExecuteResult> {
         let mut buf = [0; 1];
         let path = self.path.to_string_lossy();
         let bytes = path.as_bytes();

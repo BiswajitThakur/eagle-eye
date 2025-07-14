@@ -38,11 +38,10 @@ impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
 }
 
 impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
-    pub fn send<U: io::Write, E: io::Write, T: for<'a> TaskSync<&'a mut Self, U, E>>(
+    pub fn send<U: io::Write, T: for<'a> TaskSync<&'a mut Self, U>>(
         &mut self,
         task: T,
-        ok: U,
-        err: E,
+        http: U,
     ) -> io::Result<ExecuteResult> {
         let mut buf = [0; 1];
         write!(self, "{}\n", T::id())?;
@@ -54,7 +53,7 @@ impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
         }
         match flow.unwrap() {
             FlowControl::Close | FlowControl::StopServer => Ok(ExecuteResult::UnknownTask),
-            FlowControl::Continue => task.execute_on_client(self, ok, err),
+            FlowControl::Continue => task.execute_on_client(self, http),
         }
     }
 
