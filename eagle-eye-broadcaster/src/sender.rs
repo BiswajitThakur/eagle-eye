@@ -48,7 +48,7 @@ impl SenderInfo {
                     let millis = interval.load(Ordering::Relaxed);
                     std::thread::sleep(Duration::from_millis(millis));
                 }
-                None => std::thread::sleep(Duration::from_secs(3)),
+                None => std::thread::sleep(Duration::from_millis(300)),
             }
         }
         Ok(())
@@ -82,8 +82,8 @@ impl SenderInfoBuilder {
         self.prefix = prefix.into();
         self
     }
-    pub fn data<T: Into<Vec<u8>>>(mut self, data: T) -> Self {
-        self.data = data.into();
+    pub fn data<T: AsRef<[u8]>>(mut self, data: T) -> Self {
+        self.data.extend_from_slice(data.as_ref());
         self
     }
     pub fn is_running(mut self, is_running: Arc<AtomicBool>) -> Self {

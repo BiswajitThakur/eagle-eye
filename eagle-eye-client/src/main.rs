@@ -1,10 +1,12 @@
 use std::{
     collections::HashMap,
     io::{self, BufRead, BufReader, BufWriter, Write},
-    net::TcpListener,
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
     str::FromStr,
+    sync::{Arc, atomic::AtomicBool},
 };
 
+use eagle_eye_broadcaster::SenderInfo;
 use eagle_eye_http::{HttpResponse, Status};
 use eagle_eye_jobs::{file::RemoveFile, ping_pong::Ping};
 use eagle_eye_proto::{
@@ -87,6 +89,7 @@ fn handle_stream<R: io::Read + BufRead, W: io::Write>(
 }
 
 struct MyDevices<const N: usize, R: io::Read, W: io::Write> {
+    client: ClientSync,
     // online devices
     online: Vec<(u128, TaskSenderSync<N, R, W>)>,
     // u128: device id
@@ -109,6 +112,36 @@ impl<const N: usize, R: io::Read, W: io::Write> MyDevices<N, R, W> {
         }
     }
     pub fn scan(&mut self) -> io::Result<()> {
+        self.refresh_online_devices();
+        let online_device_id = self.online.iter().map(|(id, _)| *id).collect::<Vec<u128>>();
+        let mut iter_all_device = self.all.iter();
+        let listener = TcpListener::bind(SocketAddr::new(
+            std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            0,
+        ))?;
+        let is_running = Arc::new(AtomicBool::new(true));
+        while let Some((id, pass)) = iter_all_device.next() {
+            if online_device_id.contains(id) {
+                continue;
+            }
+            let v = SenderInfo::builder()
+                .is_running(is_running.clone())
+                .prefix(":eagle-eye:")
+                .data(id.to_be_bytes())
+                .data(listener.local_addr()?.port().to_be_bytes())
+                .broadcast_addr(SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
+                    6923,
+                ))
+                .socket_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0))
+                .build();
+            let t1 = std::thread::spawn(move || v.send());
+            match listener.accept() {
+                Ok((stream, addr)) => {}
+                Err(_) => {}
+            }
+            t1.join().unwrap()?;
+        }
         todo!()
     }
 }
