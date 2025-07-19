@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 eagle-eye-proto = { path = "../eagle-eye-proto" }
+eagle-eye-http = { path = "../eagle-eye-http" }
 

@@ -2,3 +2,7 @@
 resolver = "3"
 members = [ "eagle-eye-broadcaster", "eagle-eye-cli", "eagle-eye-client", "eagle-eye-server", "eagle-eye-jobs","eagle-eye-proto", "eagle-eye-device", "eagle-eye-http"]
 
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+rmp-serde = "1.3.0"
+

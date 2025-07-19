@@ -186,6 +186,7 @@ name = "eagle-eye-client"
 version = "0.1.0"
 dependencies = [
  "eagle-eye-broadcaster",
+ "eagle-eye-http",
  "eagle-eye-jobs",
  "eagle-eye-proto",
 ]
@@ -205,6 +206,7 @@ version = "0.1.0"
 name = "eagle-eye-jobs"
 version = "0.1.0"
 dependencies = [
+ "eagle-eye-http",
  "eagle-eye-proto",
 ]
 

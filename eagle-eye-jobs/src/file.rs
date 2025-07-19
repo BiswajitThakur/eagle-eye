@@ -1,5 +1,6 @@
 use std::{ffi::OsString, io, str::FromStr};
 
+use eagle_eye_http::HttpResponse;
 use eagle_eye_proto::task::ExecuteResult;
 use eagle_eye_proto::task::{GetId, TaskSync};
 
@@ -20,7 +21,7 @@ impl GetId for RemoveFile {
 }
 
 impl<T: io::Read + io::Write, W: io::Write> TaskSync<T, W> for RemoveFile {
-    fn execute_on_client(&self, mut stream: T, _http: W) -> std::io::Result<ExecuteResult> {
+    fn execute_on_client(&self, mut stream: T, http: W) -> std::io::Result<ExecuteResult> {
         let mut buf = [0; 1];
         let path = self.path.to_string_lossy();
         let bytes = path.as_bytes();
@@ -29,9 +30,13 @@ impl<T: io::Read + io::Write, W: io::Write> TaskSync<T, W> for RemoveFile {
         stream.write_all(bytes)?;
         stream.flush()?;
         stream.read_exact(&mut buf)?;
+        let res = HttpResponse::new();
         let r = ExecuteResult::try_from(buf);
         if r.is_err() {
+            res.send_str(http, "ERROR: faild to remove file")?;
             return Err(io::Error::other("Invalid Execution Result"));
+        } else {
+            res.send_str(http, "OK: success")?;
         }
         Ok(r.unwrap())
     }

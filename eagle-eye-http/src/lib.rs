@@ -4,6 +4,7 @@ pub use status::Status;
 
 use std::{
     borrow::Cow,
+    ffi::OsStr,
     fmt,
     io::{self, BufReader},
     path::Path,
@@ -35,7 +36,8 @@ impl fmt::Display for Method {
     }
 }
 
-pub struct EagleEyeHttpResponse {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpResponse {
     protocol_version: String,
     status: Status,
     content_type: Option<String>,
@@ -43,7 +45,7 @@ pub struct EagleEyeHttpResponse {
     headers: Vec<(String, String)>,
 }
 
-impl Default for EagleEyeHttpResponse {
+impl Default for HttpResponse {
     fn default() -> Self {
         Self {
             protocol_version: "HTTP/1.1".to_owned(),
@@ -55,7 +57,10 @@ impl Default for EagleEyeHttpResponse {
     }
 }
 
-impl EagleEyeHttpResponse {
+impl HttpResponse {
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn protocol_version<T: Into<String>>(mut self, version: T) -> Self {
         self.protocol_version = version.into();
         self
@@ -85,7 +90,22 @@ impl EagleEyeHttpResponse {
         self.content_length
     }
     pub fn push_header<U: Into<String>, V: Into<String>>(mut self, key: U, value: V) -> Self {
-        self.headers.push((key.into(), value.into()));
+        let key = key.into();
+        let value = value.into();
+        let index = self
+            .headers
+            .iter()
+            .enumerate()
+            .find(|&(_, (k, _))| k == &key)
+            .map(|(i, _)| i);
+        match index {
+            Some(v) => {
+                self.headers[v] = (key, value);
+            }
+            None => {
+                self.headers.push((key, value));
+            }
+        }
         self
     }
     pub fn get_header<T: AsRef<str>>(&self, key: T) -> Option<Cow<'_, str>> {
@@ -114,12 +134,8 @@ impl EagleEyeHttpResponse {
         write!(stream, "\r\n")?;
         stream.flush()
     }
-    pub fn send_byte<W: io::Write, T: AsRef<[u8]>>(
-        self,
-        mut stream: W,
-        value: T,
-    ) -> io::Result<()> {
-        let value = value.as_ref();
+    pub fn send_str<W: io::Write, T: AsRef<str>>(self, mut stream: W, value: T) -> io::Result<()> {
+        let bytes = value.as_ref().as_bytes();
         write!(stream, "{} {}\r\n", self.protocol_version, self.status)?;
         write!(
             stream,
@@ -132,49 +148,71 @@ impl EagleEyeHttpResponse {
         write!(
             stream,
             "Content-Length: {}\r\n",
-            self.content_length.unwrap_or(value.len())
+            self.content_length.unwrap_or(bytes.len())
         )?;
         for (key, value) in self.headers {
             write!(stream, "{}: {}\r\n", key, value)?;
         }
         write!(stream, "\r\n")?;
+        stream.write_all(bytes)?;
         stream.flush()
     }
     pub fn send_file<W: io::Write, P: AsRef<Path>>(self, mut stream: W, path: P) -> io::Result<()> {
+        let path = path.as_ref();
+        let ext = path.extension();
         let file = std::fs::File::open(path)?;
-        let mut n = file.metadata()?.len() as usize;
-        let file_reader = BufReader::new(file);
+        let n = file.metadata()?.len();
+        let mut file_reader = BufReader::new(file);
+        write!(stream, "{} {}\r\n", self.protocol_version, self.status)?;
+        write!(
+            stream,
+            "Content-Type: {}\r\n",
+            match ext {
+                // text
+                Some(v) if v == OsStr::new("html") => "text/html",
+                Some(v) if v == OsStr::new("htm") => "text/html",
+                Some(v) if v == OsStr::new("css") => "text/css",
+                Some(v) if v == OsStr::new("js") => "application/javascript",
+                Some(v) if v == OsStr::new("json") => "application/json",
+                Some(v) if v == OsStr::new("txt") => "text/plain",
+                Some(v) if v == OsStr::new("csv") => "text/csv",
+                Some(v) if v == OsStr::new("xml") => "application/xml",
+
+                // image
+                Some(v) if v == OsStr::new("jpg") => "image/jpeg",
+                Some(v) if v == OsStr::new("jpeg") => "image/jpeg",
+                Some(v) if v == OsStr::new("png") => "image/png",
+                Some(v) if v == OsStr::new("gif") => "image/gif",
+                Some(v) if v == OsStr::new("webp") => "image/webp",
+                Some(v) if v == OsStr::new("svg") => "image/svg+xml",
+                Some(v) if v == OsStr::new("ico") => "image/x-icon",
+
+                // audio
+                Some(v) if v == OsStr::new("mp3") => "audio/mpeg",
+                Some(v) if v == OsStr::new("wav") => "audio/wav",
+                Some(v) if v == OsStr::new("ogg") => "audio/ogg",
+                Some(v) if v == OsStr::new("m4a") => "audio/mp4",
+
+                // video
+                Some(v) if v == OsStr::new("mp4") => "video/mp4",
+                Some(v) if v == OsStr::new("webm") => "video/webm",
+                Some(v) if v == OsStr::new("ogg") => "video/ogg",
+                Some(v) if v == OsStr::new("mov") => "video/quicktime",
+
+                // executable
+                Some(v) if v == OsStr::new("wasm") => "application/wasm",
+                Some(v) if v == OsStr::new("sh") => "application/x-sh",
+
+                // unknown
+                _ => "application/octet-stream",
+            }
+        )?;
+        write!(stream, "Content-Length: {}\r\n", n)?;
+        for (key, value) in self.headers {
+            write!(stream, "{}: {}\r\n", key, value)?;
+        }
+        write!(stream, "\r\n")?;
+        std::io::copy(&mut file_reader, &mut stream)?;
         Ok(())
     }
 }
-
-/*
-pub struct EagleEyeHttpRequest<T> {
-    method: Method,
-    path: String,
-    protocol_version: String,
-    headers: Vec<(String, String)>,
-    body_len: Option<usize>,
-    stream: T,
-}
-
-impl<T: io::Read> io::Read for EagleEyeHttpRequest<T> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.body_len.is_none() {
-            return self.stream.read(buf);
-        }
-        let len = self.body_len.as_mut().unwrap();
-        if *len == 0 {
-            Ok(0)
-        } else {
-            let buf_len = buf.len();
-            let n = self
-                .stream
-                .read(&mut buf[0..std::cmp::min(*len, buf_len)])?;
-            *len -= n;
-            Ok(n)
-        }
-    }
-}
-*/
-

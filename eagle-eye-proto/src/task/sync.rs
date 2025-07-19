@@ -10,20 +10,6 @@ pub enum ExecuteResult {
     Faild = 4,
 }
 
-/*
-impl TryFrom<u8> for ExecuteResult {
-    type Error = ();
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Ok),
-            1 => Ok(Self::InvalidRequest),
-            2 => Ok(Self::UnknownTask),
-            _ => Err(()),
-        }
-    }
-}
-*/
-
 impl TryFrom<[u8; 1]> for ExecuteResult {
     type Error = ();
     fn try_from(value: [u8; 1]) -> Result<Self, Self::Error> {
