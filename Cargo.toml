@@ -3,6 +3,9 @@ resolver = "3"
 members = [ "eagle-eye-broadcaster", "eagle-eye-cli", "eagle-eye-client", "eagle-eye-server", "eagle-eye-jobs","eagle-eye-proto", "eagle-eye-device", "eagle-eye-http"]
 
 [workspace.dependencies]
+aes = "0.8.4"
+ctr = "0.9.2"
+cbc = "0.1.2"
 serde = { version = "1.0", features = ["derive"] }
 rmp-serde = "1.3.0"
-
+rand = "0.9.1"

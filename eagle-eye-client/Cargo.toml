@@ -8,3 +8,8 @@ eagle-eye-broadcaster = { path = "../eagle-eye-broadcaster" }
 eagle-eye-jobs = { path = "../eagle-eye-jobs" }
 eagle-eye-proto = { path = "../eagle-eye-proto" }
 eagle-eye-http = { path = "../eagle-eye-http" }
+aes = { workspace = true }
+ctr = { workspace = true }
+rand = { workspace = true }
+cbc = { workspace = true }
+
