@@ -1,131 +1,25 @@
 use std::{
-    fmt,
-    io::{self, BufRead, BufReader, BufWriter, Write},
-    net::{SocketAddr, TcpListener},
-    path::{Path, PathBuf},
-    str::FromStr,
+    collections::HashMap,
+    io::{self, Read, Write},
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream},
     sync::{Arc, atomic::AtomicBool},
+    time::Duration,
 };
 
+use aes::cipher::{BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
 use eagle_eye_broadcaster::SenderInfo;
+use eagle_eye_jobs::ping_pong::Ping;
+use eagle_eye_proto::{
+    client::{ClientSync, TaskSenderSync},
+    task::ExecuteResult,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Device {
     id: u128,
     key: [u8; 32],
-    user_name: String,
     os: String,
-}
-
-impl fmt::Display for Device {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let id = self.id.to_be_bytes();
-        for byte in id {
-            write!(f, "{:02x}", byte)?;
-        }
-        for byte in self.key {
-            write!(f, "{:02x}", byte)?;
-        }
-        let user = self.user_name.as_bytes();
-        let user_len = user.len() as u8;
-        write!(f, "{:02x}", user_len)?;
-        for byte in user {
-            write!(f, "{:02x}", byte)?;
-        }
-        let os = self.os.as_bytes();
-        let os_len = os.len() as u8;
-        write!(f, "{:02x}", os_len)?;
-        for byte in os {
-            write!(f, "{:02x}", byte)?;
-        }
-        Ok(())
-    }
-}
-
-impl FromStr for Device {
-    type Err = &'static str;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        fn parse_byte(s: &str, i: &mut usize) -> Result<u8, &'static str> {
-            if *i + 2 > s.len() {
-                return Err("Unexpected end of input");
-            }
-            let b = u8::from_str_radix(&s[*i..*i + 2], 16).map_err(|_| "Invalid hex digit")?;
-            *i += 2;
-            Ok(b)
-        }
-        let mut i = 0;
-
-        // Parse u128 (16 bytes)
-        let mut id_bytes = [0u8; 16];
-        for b in &mut id_bytes {
-            *b = parse_byte(s, &mut i)?;
-        }
-        let id = u128::from_be_bytes(id_bytes);
-
-        // Parse key (32 bytes)
-        let mut key = [0u8; 32];
-        for b in &mut key {
-            *b = parse_byte(s, &mut i)?;
-        }
-
-        // user_name length
-        let user_len = parse_byte(s, &mut i)? as usize;
-
-        // user_name bytes
-        let mut user_bytes = Vec::with_capacity(user_len);
-        for _ in 0..user_len {
-            user_bytes.push(parse_byte(s, &mut i)?);
-        }
-        let user_name = String::from_utf8(user_bytes).map_err(|_| "Invalid UTF-8 in username")?;
-
-        // os length
-        let os_len = parse_byte(s, &mut i)? as usize;
-
-        // os bytes
-        let mut os_bytes = Vec::with_capacity(os_len);
-        for _ in 0..os_len {
-            os_bytes.push(parse_byte(s, &mut i)?);
-        }
-        let os = String::from_utf8(os_bytes).map_err(|_| "Invalid UTF-8 in OS")?;
-
-        Ok(Device {
-            id,
-            key,
-            user_name,
-            os,
-        })
-    }
-}
-
-impl Device {
-    pub fn id(mut self, id: u128) -> Self {
-        self.id = id;
-        self
-    }
-    pub fn get_id(&self) -> u128 {
-        self.id
-    }
-    pub fn key(mut self, key: [u8; 32]) -> Self {
-        self.key = key;
-        self
-    }
-    pub fn get_key(&self) -> &[u8] {
-        &self.key
-    }
-    pub fn user_name<T: Into<String>>(mut self, name: T) -> Self {
-        self.user_name = name.into();
-        self
-    }
-    pub fn get_user_name(&self) -> &str {
-        self.user_name.as_str()
-    }
-    pub fn os<T: Into<String>>(mut self, os: T) -> Self {
-        self.os = os.into();
-        self
-    }
-    pub fn get_os(&self) -> &str {
-        self.os.as_str()
-    }
+    user: String,
 }
 
 impl Default for Device {
@@ -155,75 +49,268 @@ impl Default for Device {
         Self {
             id: 0,
             key: [0; 32],
-            user_name: "Unknown".to_owned(),
+            user: "Unknown".to_owned(),
             os,
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeviceManager {
-    devices: Vec<Device>,
+impl Device {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn id(mut self, id: u128) -> Self {
+        self.id = id;
+        self
+    }
+    pub fn key(mut self, key: [u8; 32]) -> Self {
+        self.key = key;
+        self
+    }
+    pub fn os<T: Into<String>>(mut self, os: T) -> Self {
+        self.os = os.into();
+        self
+    }
+    pub fn user<T: Into<String>>(mut self, user: T) -> Self {
+        self.user = user.into();
+        self
+    }
+    pub fn save<W: io::Write>(&self, mut writer: W) -> io::Result<()> {
+        let os = self.os.as_bytes();
+        let os_len = os.len() as u16;
+        let user = self.user.as_bytes();
+        let user_len = user.len() as u16;
+        writer.write_all(&os_len.to_be_bytes())?;
+        writer.write_all(&user_len.to_be_bytes())?;
+        writer.write_all(&self.id.to_be_bytes())?;
+        writer.write_all(&self.key)?;
+        writer.write_all(os)?;
+        writer.write_all(user)?;
+        writer.write_all(&[111, 0])?;
+        writer.flush()
+    }
+    pub fn from_reader<R: io::Read>(mut reader: R) -> io::Result<Self> {
+        let mut buf = [0; 16];
+        let mut small = [0; 2];
+        reader.read_exact(&mut small)?;
+        let mut os_len = u16::from_be_bytes([small[0], small[1]]) as usize;
+        reader.read_exact(&mut small)?;
+        let mut user_len = u16::from_be_bytes([small[0], small[1]]) as usize;
+        if os_len + user_len > 128 {
+            return Err(io::Error::other(
+                "ERROR: length of (user + os) can not be greater then 128",
+            ));
+        }
+        reader.read_exact(&mut buf)?;
+        let id = u128::from_be_bytes(buf);
+        let mut key = [0; 32];
+        reader.read_exact(&mut key)?;
+        reader.read_exact(&mut buf[0..2])?;
+        let mut os = String::new();
+        loop {
+            if os_len == 0 {
+                break;
+            }
+            let r = reader.read(&mut buf[0..std::cmp::min(16, os_len)])?;
+            os.push_str(unsafe { std::str::from_utf8_unchecked(&buf[0..r]) });
+            os_len -= r;
+        }
+        let mut user = String::new();
+        loop {
+            if user_len == 0 {
+                break;
+            }
+            let r = reader.read(&mut buf[0..std::cmp::min(16, user_len)])?;
+            user.push_str(unsafe { std::str::from_utf8_unchecked(&buf[0..r]) });
+            user_len -= r;
+        }
+        Ok(Self { id, key, os, user })
+    }
+    pub fn get_id(&self) -> &u128 {
+        &self.id
+    }
+    pub fn get_key(&self) -> &[u8; 32] {
+        &self.key
+    }
+    pub fn get_os(&self) -> &str {
+        self.os.as_str()
+    }
+    pub fn get_user(&self) -> &str {
+        self.user.as_str()
+    }
 }
 
-impl DeviceManager {
+pub struct DeviceManager<const N: usize> {
+    client: ClientSync,
+    // online devices
+    online: HashMap<u128, TaskSenderSync<N, TcpStream, TcpStream>>,
+    // u128: device id
+    // [u8; 32]: password
+    all: Vec<Device>,
+}
+
+impl<const N: usize> DeviceManager<N> {
     pub fn new() -> Self {
         Self {
-            devices: Vec::new(),
+            client: ClientSync::new(),
+            online: HashMap::new(),
+            all: Vec::new(),
         }
+    }
+    pub fn from_reader<R: io::Read>(mut reader: R) -> io::Result<Self> {
+        let mut devices = Vec::new();
+        let mut buf = [0; 2];
+        reader.read_exact(&mut buf)?;
+        let mut total_device = u16::from_be_bytes(buf);
+        loop {
+            if total_device == 0 {
+                break;
+            }
+            let device = Device::from_reader(&mut reader)?;
+            devices.push(device);
+            total_device -= 1;
+        }
+        Ok(Self {
+            client: ClientSync::new(),
+            online: HashMap::new(),
+            all: devices,
+        })
+    }
+    pub fn save<W: io::Write>(&self, mut writer: W) -> io::Result<()> {
+        let total = self.all.len() as u16;
+        writer.write_all(&total.to_be_bytes())?;
+        for device in self.all.iter() {
+            device.save(&mut writer)?;
+        }
+        Ok(())
     }
     pub fn push_device(&mut self, device: Device) {
-        self.devices.push(device);
+        let index_if_exists = self
+            .all
+            .iter()
+            .enumerate()
+            .find(|(_, v)| v.get_id() == device.get_id())
+            .map(|(i, _)| i);
+        if let Some(index) = index_if_exists {
+            self.all[index] = device
+        } else {
+            self.all.push(device);
+        }
     }
-    pub fn get_device(&self, id: u128) -> Option<&Device> {
-        self.devices.iter().find(|&v| v.id == id)
+    pub fn total_online(&self) -> usize {
+        self.online.len()
     }
-    pub fn from_reader<R: io::Read>(r: R) -> io::Result<Self> {
-        let mut devices = Vec::new();
-        let reader = BufReader::new(r);
-        for line in reader.lines() {
-            if line.is_err() {
-                return Err(io::Error::other("Invalid String"));
+    pub fn total_device(&self) -> usize {
+        self.all.len()
+    }
+    pub fn refresh_online_devices(&mut self) {
+        let mut offline_device = Vec::new();
+        let mut iter_online = self.online.iter_mut();
+        while let Some((id, t)) = iter_online.next() {
+            match t.send(Ping, std::io::sink()) {
+                Ok(ExecuteResult::Ok) => continue,
+                _ => offline_device.push(*id),
             }
-            let line = match line {
-                Ok(v) => v,
-                Err(err) => return Err(err),
-            };
-            let line = line.trim();
-            if line.is_empty() {
+        }
+        for id in offline_device {
+            self.online.remove(&id);
+        }
+    }
+    pub fn get_online_device_id(&self) -> Vec<u128> {
+        self.online.iter().map(|(id, _)| *id).collect::<Vec<u128>>()
+    }
+    pub fn scan(&mut self) -> io::Result<()> {
+        type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
+        let client = ClientSync::new();
+        let mut buffer = [0; 256];
+        self.refresh_online_devices();
+        let online_device_id = self.get_online_device_id();
+        let mut iter_all_device = self.all.iter();
+        let is_running = Arc::new(AtomicBool::new(true));
+        while let Some(device) = iter_all_device.next() {
+            if online_device_id.contains(device.get_id()) {
                 continue;
             }
-            let device = Device::from_str(line);
-            if device.is_err() {
-                return Err(io::Error::other("Invalid Data"));
-            }
-            devices.push(device.unwrap());
-        }
-        Ok(Self { devices })
-    }
-    pub fn save<W: io::Write>(&self, w: W) -> io::Result<()> {
-        let mut f = BufWriter::new(w);
-        for device in self.devices.iter() {
-            f.write(device.to_string().as_bytes())?;
-            f.write(b"\n")?;
-        }
-        f.flush()
-    }
-    pub fn scan_devices(&self, is_running: Arc<AtomicBool>) -> Vec<(&Device, SocketAddr)> {
-        let is_broadcasting = Arc::new(AtomicBool::new(true));
-        let listener = TcpListener::bind("0.0.0.0:0").unwrap();
-        for device in self.devices.iter() {
-            let s = SenderInfo::builder()
+            let listener = TcpListener::bind(SocketAddr::new(
+                std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                0,
+            ))?;
+            let addr = listener.local_addr()?;
+            let listener_port = addr.port();
+            let iv = rand::random::<[u8; 16]>();
+            let secret = rand::random::<[u8; 16]>();
+            let ct = Aes256CbcEnc::new(device.get_key().into(), &iv.into());
+            let id_bytes = &device.get_id().to_be_bytes(); // 16 bytes = 128 bit
+            buffer[..16].copy_from_slice(id_bytes);
+            buffer[16..32].copy_from_slice(&secret);
+            buffer[32..34].copy_from_slice(&listener_port.to_be_bytes());
+            let encrypted = ct.encrypt_padded_mut::<Pkcs7>(&mut buffer, 34).unwrap();
+            let data_len = encrypted.len() as u16 + iv.len() as u16;
+
+            is_running.store(true, std::sync::atomic::Ordering::Relaxed);
+            let v = SenderInfo::builder()
+                .is_running(is_running.clone())
                 .prefix(":eagle-eye:")
-                .data(device.id.to_be_bytes())
-                .is_running(is_broadcasting.clone())
-                .socket_addr(addr)
+                .data(data_len.to_be_bytes())
+                .data(&iv)
+                .data(encrypted)
+                .broadcast_addr(SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
+                    6923,
+                ))
+                .socket_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0))
                 .build();
-            s.send().unwrap();
+            let (send, recv) = std::sync::mpsc::channel::<TcpStream>();
+            let t1 = std::thread::spawn(move || v.send());
+            let t2 = std::thread::spawn(move || {
+                let mut buf = [0; 16];
+                for stream in listener.incoming() {
+                    if stream.is_err() {
+                        break;
+                    }
+                    let mut stream = stream.unwrap();
+                    if stream
+                        .set_read_timeout(Some(Duration::from_secs(1)))
+                        .is_err()
+                    {
+                        break;
+                    }
+                    if stream.read_exact(&mut buf[0..1]).is_err() {
+                        continue;
+                    }
+                    if buf[0] == 111 {
+                        break;
+                    }
+                    if stream.read_exact(&mut buf).is_err() {
+                        continue;
+                    }
+                    if buf == secret {
+                        send.send(stream).unwrap();
+                        break;
+                    }
+                }
+            });
+
+            let now = std::time::Instant::now();
+            loop {
+                std::thread::sleep(Duration::from_millis(200));
+                if let Ok(stream) = recv.try_recv() {
+                    is_running.store(false, std::sync::atomic::Ordering::Relaxed);
+                    let t = client.connect::<N>(device.key, stream)?;
+                    self.online.insert(*device.get_id(), t);
+                    break;
+                }
+                if now.elapsed() > Duration::from_secs(5) {
+                    // stop t1 and t2 thread
+                    is_running.store(false, std::sync::atomic::Ordering::Relaxed);
+                    let mut v = TcpStream::connect(addr)?;
+                    v.write_all(&[111])?;
+                    break;
+                }
+            }
+            t1.join().unwrap()?;
+            t2.join().unwrap();
         }
-        todo!()
+        Ok(())
     }
 }
-
-#[cfg(test)]
-mod test;

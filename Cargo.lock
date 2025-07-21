@@ -97,6 +97,7 @@ dependencies = [
  "cbc",
  "ctr",
  "eagle-eye-broadcaster",
+ "eagle-eye-device",
  "eagle-eye-http",
  "eagle-eye-jobs",
  "eagle-eye-proto",
@@ -107,7 +108,12 @@ dependencies = [
 name = "eagle-eye-device"
 version = "0.1.0"
 dependencies = [
+ "aes",
+ "cbc",
  "eagle-eye-broadcaster",
+ "eagle-eye-jobs",
+ "eagle-eye-proto",
+ "rand",
 ]
 
 [[package]]

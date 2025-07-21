@@ -37,6 +37,14 @@ impl<T> EagleEyeServerSync<T> {
             log: None,
         }
     }
+    pub fn key(mut self, key: [u8; 32]) -> Self {
+        self.key = key;
+        self
+    }
+    pub fn id(mut self, id: u128) -> Self {
+        self.id = id;
+        self
+    }
 
     pub fn set_log_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.log = Some(path.into());
@@ -73,9 +81,7 @@ impl<const N: usize, R: io::Read, W: io::Write> EagleEyeServerSync<EagleEyeStrea
             let id = Self::read_id(&mut e_stream).unwrap();
             match id.as_str() {
                 ":end:" => break,
-                ":stop-server:" => {
-                    break;
-                }
+                ":stop-server:" => break,
                 _ => {}
             }
             let fun = self.handler.get(id);

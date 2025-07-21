@@ -12,6 +12,13 @@ pub struct EagleEyeStreamSync<const N: usize, R: io::Read, W: io::Write> {
     writer: BufWriter<W>,
 }
 
+#[cfg(debug_assertions)]
+impl<const N: usize, R: io::Read, W: io::Write> Drop for EagleEyeStreamSync<N, R, W> {
+    fn drop(&mut self) {
+        println!("....Stream Droped......");
+    }
+}
+
 impl<const N: usize, R: io::Read, W: io::Write> io::Read for EagleEyeStreamSync<N, R, W> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
