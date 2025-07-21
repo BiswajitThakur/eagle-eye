@@ -3,7 +3,7 @@ use std::{
     io::{self, BufRead, BufReader, BufWriter, Read, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream},
     str::FromStr,
-    sync::{Arc, Mutex, atomic::AtomicBool},
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 
@@ -17,6 +17,11 @@ use eagle_eye_proto::{
 };
 
 fn main() -> io::Result<()> {
+    let mut my_devices = MyDevices::<512>::new();
+    my_devices.push_device(Device::new().id(123).password([33; 32]));
+    my_devices.scan()?;
+    println!("No of online Devices: {}", my_devices.total_online());
+    /*
     let listener = TcpListener::bind("127.0.0.1:7575")?;
     for stream in listener.incoming() {
         let stream = stream?;
@@ -24,6 +29,7 @@ fn main() -> io::Result<()> {
         let writer = BufWriter::new(stream);
         handle_stream(reader, writer)?;
     }
+    */
     Ok(())
 }
 
@@ -44,6 +50,7 @@ impl FromStr for Method {
     }
 }
 
+/*
 fn handle_stream<R: io::Read + BufRead, W: io::Write>(
     mut reader: R,
     mut writer: W,
@@ -89,6 +96,7 @@ fn handle_stream<R: io::Read + BufRead, W: io::Write>(
     }
     Ok(())
 }
+*/
 
 #[derive(Debug, Clone, PartialEq, Default)]
 struct Device {
@@ -99,6 +107,9 @@ struct Device {
 }
 
 impl Device {
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn id(mut self, id: u128) -> Self {
         self.id = id;
         self
@@ -178,27 +189,50 @@ impl Device {
     }
 }
 
-struct MyDevices<const N: usize, R: io::Read, W: io::Write> {
+struct MyDevices<const N: usize> {
     client: ClientSync,
     // online devices
-    online: Vec<(u128, TaskSenderSync<N, R, W>)>,
+    online: HashMap<u128, TaskSenderSync<N, TcpStream, TcpStream>>,
     // u128: device id
     // [u8; 32]: password
     all: Vec<Device>,
 }
 
-impl<const N: usize, R: io::Read, W: io::Write> MyDevices<N, R, W> {
+impl<const N: usize> MyDevices<N> {
+    pub fn new() -> Self {
+        Self {
+            client: ClientSync::new(),
+            online: HashMap::new(),
+            all: Vec::new(),
+        }
+    }
+    pub fn push_device(&mut self, device: Device) {
+        let index_if_exists = self
+            .all
+            .iter()
+            .enumerate()
+            .find(|(_, v)| v.get_id() == device.get_id())
+            .map(|(i, _)| i);
+        if let Some(index) = index_if_exists {
+            self.all[index] = device
+        } else {
+            self.all.push(device);
+        }
+    }
+    pub fn total_online(&self) -> usize {
+        self.online.len()
+    }
     pub fn refresh_online_devices(&mut self) {
-        let mut offline_device_index = Vec::new();
-        let mut iter_online = self.online.iter_mut().map(|(_, v)| v).enumerate();
-        while let Some((i, t)) = iter_online.next() {
+        let mut offline_device = Vec::new();
+        let mut iter_online = self.online.iter_mut();
+        while let Some((id, t)) = iter_online.next() {
             match t.send(Ping, std::io::sink()) {
                 Ok(ExecuteResult::Ok) => continue,
-                _ => offline_device_index.push(i),
+                _ => offline_device.push(*id),
             }
         }
-        for index in offline_device_index {
-            self.online.remove(index);
+        for id in offline_device {
+            self.online.remove(&id);
         }
     }
     pub fn get_online_device_id(&self) -> Vec<u128> {
@@ -227,16 +261,17 @@ impl<const N: usize, R: io::Read, W: io::Write> MyDevices<N, R, W> {
             let ct = Aes256CbcEnc::new(device.get_password().into(), &iv.into());
             let id_bytes = &device.get_id().to_be_bytes(); // 16 bytes = 128 bit
             buffer[..16].copy_from_slice(id_bytes);
-            buffer[16..].copy_from_slice(&secret);
-            buffer[32..].copy_from_slice(&listener_port.to_be_bytes());
+            buffer[16..32].copy_from_slice(&secret);
+            buffer[32..34].copy_from_slice(&listener_port.to_be_bytes());
             let encrypted = ct.encrypt_padded_mut::<Pkcs7>(&mut buffer, 34).unwrap();
-            let enc_len = encrypted.len() as u16;
+            let data_len = encrypted.len() as u16 + iv.len() as u16;
 
+            is_running.store(true, std::sync::atomic::Ordering::Relaxed);
             let v = SenderInfo::builder()
                 .is_running(is_running.clone())
                 .prefix(":eagle-eye:")
+                .data(data_len.to_be_bytes())
                 .data(&iv)
-                .data(enc_len.to_be_bytes())
                 .data(encrypted)
                 .broadcast_addr(SocketAddr::new(
                     IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
@@ -279,19 +314,22 @@ impl<const N: usize, R: io::Read, W: io::Write> MyDevices<N, R, W> {
             loop {
                 std::thread::sleep(Duration::from_millis(200));
                 if let Ok(stream) = recv.try_recv() {
-                    // let t = client.connect(key, addr);
+                    is_running.store(false, std::sync::atomic::Ordering::Relaxed);
+                    let t = client.connect::<N>(device.password, stream)?;
+                    self.online.insert(*device.get_id(), t);
                     break;
                 }
                 if now.elapsed() > Duration::from_secs(5) {
+                    // stop t1 and t2 thread
+                    is_running.store(false, std::sync::atomic::Ordering::Relaxed);
                     let mut v = TcpStream::connect(addr)?;
                     v.write_all(&[111])?;
                     break;
                 }
             }
-
             t1.join().unwrap()?;
             t2.join().unwrap();
         }
-        todo!()
+        Ok(())
     }
 }

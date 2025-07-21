@@ -102,9 +102,9 @@ impl ClientSync {
     pub fn connect<const N: usize>(
         &self,
         key: [u8; 32],
-        addr: SocketAddr,
+        stream: TcpStream,
     ) -> io::Result<TaskSenderSync<N, TcpStream, TcpStream>> {
-        let stream1 = TcpStream::connect(addr)?;
+        let stream1 = stream;
         let stream2 = stream1.try_clone()?;
         let e_stream = match handle_auth_on_client_sync::<N, _, _>(key, stream1, stream2)? {
             Some(v) => v,
