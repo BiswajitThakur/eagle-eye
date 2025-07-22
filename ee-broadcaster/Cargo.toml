@@ -1,5 +1,5 @@
 [package]
-name = "eagle-eye-broadcaster"
+name = "ee-broadcaster"
 version = "0.1.0"
 edition = "2024"
 

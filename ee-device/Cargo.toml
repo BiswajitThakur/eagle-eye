@@ -1,13 +1,14 @@
 [package]
-name = "eagle-eye-device"
+name = "ee-device"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eagle-eye-broadcaster = { path = "../eagle-eye-broadcaster" }
-eagle-eye-proto = { path = "../eagle-eye-proto" }
-eagle-eye-jobs = { path = "../eagle-eye-jobs" }
+ee-broadcaster = { path = "../ee-broadcaster" }
+ee-task = { path = "../ee-task" }
+ee-stream = { path = "../ee-stream" }
 aes = { workspace = true }
 cbc = { workspace = true }
+ctr = { workspace = true }
 rand = { workspace = true }
 

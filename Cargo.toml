@@ -6,7 +6,6 @@ members = [
     "ee-sender",
     "ee-receiver",
     "ee-task",
-    "eagle-eye-proto",
     "ee-device",
     "ee-http",
     "ee-stream"

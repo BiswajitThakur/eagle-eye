@@ -2,7 +2,7 @@ use std::{
     io,
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,

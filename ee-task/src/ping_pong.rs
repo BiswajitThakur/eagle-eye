@@ -1,6 +1,6 @@
 use std::io;
 
-use eagle_eye_proto::task::{ExecuteResult, GetId, TaskSync};
+use crate::{ExeSenderSync, ExecuteResult, GetId};
 
 pub struct Ping;
 
@@ -10,8 +10,8 @@ impl GetId for Ping {
     }
 }
 
-impl<T: io::Read + io::Write, W: io::Write> TaskSync<T, W> for Ping {
-    fn execute_on_client(&self, mut stream: T, _: W) -> std::io::Result<ExecuteResult> {
+impl<T: io::Read + io::Write, W: io::Write> ExeSenderSync<T, W> for Ping {
+    fn execute_on_sender(&self, mut stream: T, _: W) -> std::io::Result<ExecuteResult> {
         let mut buf = [0; 4];
         stream.write_all(b"ping")?;
         stream.flush()?;
@@ -21,6 +21,12 @@ impl<T: io::Read + io::Write, W: io::Write> TaskSync<T, W> for Ping {
         } else {
             Err(std::io::Error::other("ERROR: invalid response"))
         }
+    }
+}
+
+impl Default for Ping {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

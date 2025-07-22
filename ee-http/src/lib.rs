@@ -80,7 +80,7 @@ impl HttpResponse {
         self
     }
     pub fn get_content_type(&self) -> Option<&str> {
-        self.content_type.as_ref().map(|v| v.as_str())
+        self.content_type.as_deref()
     }
     pub fn content_length(mut self, value: usize) -> Self {
         self.content_length = Some(value);
@@ -129,7 +129,7 @@ impl HttpResponse {
             write!(stream, "Content-Type: {}", self.content_type.unwrap())?;
         }
         for (key, value) in self.headers {
-            write!(stream, "{}: {}\r\n", key, value)?;
+            write!(stream, "{key}: {value}\r\n")?;
         }
         write!(stream, "\r\n")?;
         stream.flush()
@@ -140,9 +140,7 @@ impl HttpResponse {
         write!(
             stream,
             "Content-Type: {}\r\n",
-            self.content_type
-                .as_ref()
-                .map(|v| v.as_str())
+            self.content_type.as_deref()
                 .unwrap_or("text/plain")
         )?;
         write!(
@@ -151,7 +149,7 @@ impl HttpResponse {
             self.content_length.unwrap_or(bytes.len())
         )?;
         for (key, value) in self.headers {
-            write!(stream, "{}: {}\r\n", key, value)?;
+            write!(stream, "{key}: {value}\r\n")?;
         }
         write!(stream, "\r\n")?;
         stream.write_all(bytes)?;
@@ -207,9 +205,9 @@ impl HttpResponse {
                 _ => "application/octet-stream",
             }
         )?;
-        write!(stream, "Content-Length: {}\r\n", n)?;
+        write!(stream, "Content-Length: {n}\r\n")?;
         for (key, value) in self.headers {
-            write!(stream, "{}: {}\r\n", key, value)?;
+            write!(stream, "{key}: {value}\r\n")?;
         }
         write!(stream, "\r\n")?;
         std::io::copy(&mut file_reader, &mut stream)?;

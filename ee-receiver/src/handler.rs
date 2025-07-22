@@ -1,9 +1,9 @@
 use std::{net::TcpStream, sync::Arc};
 
-use eagle_eye_proto::{server::EagleEyeServerSync, task::GetId};
-
-use eagle_eye_jobs::file::RemoveFile;
 use ee_stream::EStreamSync;
+use ee_task::{GetId, file::RemoveFile};
+
+use crate::receiver::EagleEyeServerSync;
 
 pub fn handler<const N: usize>(
     key: [u8; 32],

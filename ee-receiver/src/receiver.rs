@@ -3,13 +3,10 @@ use std::{
     path::PathBuf,
 };
 
-use ee_stream::EStreamSync;
+use ee_stream::{EStreamSync, FlowControl};
+use ee_task::TaskRegisterySync;
 
-use crate::{
-    FlowControl,
-    task::TaskRegisterySync,
-    utils::{handle_auth_on_server_sync, write_log_sync},
-};
+use crate::utils::{handle_auth_on_receiver_sync, write_log_sync};
 
 pub struct EagleEyeServerSync<T> {
     id: u128,
@@ -70,7 +67,7 @@ impl<const N: usize, R: io::Read, W: io::Write> EagleEyeServerSync<EStreamSync<N
         Ok(result)
     }
     pub fn handle_stream(&self, r: R, w: W) -> io::Result<()> {
-        let mut e_stream = match handle_auth_on_server_sync::<N, R, W>(self.key, r, w) {
+        let mut e_stream = match handle_auth_on_receiver_sync::<N, R, W>(self.key, r, w) {
             Ok(None) => return Ok(()),
             Ok(Some(v)) => v,
             Err(err) => {

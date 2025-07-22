@@ -7,11 +7,11 @@ pub trait GetId {
     fn id() -> &'static str;
 }
 
-pub trait TaskSenderSync<T: io::Read + io::Write, W: io::Write>: GetId {
+pub trait ExeSenderSync<T: io::Read + io::Write, W: io::Write>: GetId {
     fn execute_on_sender(&self, stream: T, http: W) -> io::Result<ExecuteResult>;
 }
 
-pub trait TaskReceiverSync<T: io::Read + io::Write>: GetId {
+pub trait ExeReceiverSync<T: io::Read + io::Write>: GetId {
     fn execute_on_receiver(stream: T) -> io::Result<T>;
 }
 

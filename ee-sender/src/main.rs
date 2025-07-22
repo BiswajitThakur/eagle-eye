@@ -1,6 +1,6 @@
 use std::io;
 
-use eagle_eye_device::{Device, DeviceManager};
+use ee_device::{Device, DeviceManager};
 
 fn main() -> io::Result<()> {
     let mut my_devices = DeviceManager::<512>::new();

@@ -1,8 +1,8 @@
 use std::{ffi::OsString, io, str::FromStr};
 
-use eagle_eye_http::HttpResponse;
-use eagle_eye_proto::task::ExecuteResult;
-use eagle_eye_proto::task::{GetId, TaskSync};
+use ee_http::HttpResponse;
+
+use crate::{ExeSenderSync, ExecuteResult, GetId};
 
 pub struct RemoveFile {
     path: OsString,
@@ -20,8 +20,8 @@ impl GetId for RemoveFile {
     }
 }
 
-impl<T: io::Read + io::Write, W: io::Write> TaskSync<T, W> for RemoveFile {
-    fn execute_on_client(&self, mut stream: T, http: W) -> std::io::Result<ExecuteResult> {
+impl<T: io::Read + io::Write, W: io::Write> ExeSenderSync<T, W> for RemoveFile {
+    fn execute_on_sender(&self, mut stream: T, http: W) -> std::io::Result<ExecuteResult> {
         let mut buf = [0; 1];
         let path = self.path.to_string_lossy();
         let bytes = path.as_bytes();

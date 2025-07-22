@@ -8,9 +8,6 @@ use std::{
     time::Duration,
 };
 
-/// ```rust
-///
-/// ```
 pub struct SenderInfo {
     prefix: Vec<u8>,
     data: Vec<u8>,
@@ -34,8 +31,8 @@ impl SenderInfo {
             broadcast_addr,
         } = self;
         let mut buffer = Vec::with_capacity(prefix.len() + data.len());
-        buffer.extend_from_slice(&prefix);
-        buffer.extend_from_slice(&data);
+        buffer.extend_from_slice(prefix);
+        buffer.extend_from_slice(data);
         let socket = UdpSocket::bind(socket_addr)?;
         socket.set_broadcast(true)?;
         loop {

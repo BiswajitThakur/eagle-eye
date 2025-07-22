@@ -1,18 +1,22 @@
+mod task_sender;
+mod utils;
+
+pub use task_sender::TaskSenderSync;
+
 use std::{
     collections::HashMap,
     io::{self, Read, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream},
+    path::PathBuf,
     sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 
 use aes::cipher::{BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
-use eagle_eye_broadcaster::SenderInfo;
-use eagle_eye_jobs::ping_pong::Ping;
-use eagle_eye_proto::{
-    client::{ClientSync, TaskSenderSync},
-    task::ExecuteResult,
-};
+use ee_broadcaster::SenderInfo;
+use ee_task::{ExecuteResult, ping_pong::Ping};
+
+use crate::utils::handle_auth_on_sender_sync;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Device {
@@ -140,6 +144,50 @@ impl Device {
     }
 }
 
+pub struct ClientSync {
+    id: u128,
+    // devices: Vec<Device>,
+    log: Option<PathBuf>,
+}
+
+impl Default for ClientSync {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ClientSync {
+    pub fn new() -> Self {
+        Self {
+            id: 0,
+            // devices: Vec::new(),
+            log: None,
+        }
+    }
+    pub fn log<T: Into<PathBuf>>(mut self, path: T) -> Self {
+        self.log = Some(path.into());
+        self
+    }
+    pub fn connect<const N: usize>(
+        &self,
+        key: [u8; 32],
+        stream: TcpStream,
+    ) -> io::Result<TaskSenderSync<N, TcpStream, TcpStream>> {
+        let stream1 = stream;
+        let stream2 = stream1.try_clone()?;
+        let e_stream = match handle_auth_on_sender_sync::<N, _, _>(key, stream1, stream2)? {
+            Some(v) => v,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Wrong Password",
+                ));
+            }
+        };
+        Ok(TaskSenderSync::new(e_stream))
+    }
+}
+
 pub struct DeviceManager<const N: usize> {
     client: ClientSync,
     // online devices
@@ -147,6 +195,12 @@ pub struct DeviceManager<const N: usize> {
     // u128: device id
     // [u8; 32]: password
     all: Vec<Device>,
+}
+
+impl<const N: usize> Default for DeviceManager<N> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const N: usize> DeviceManager<N> {
@@ -205,8 +259,8 @@ impl<const N: usize> DeviceManager<N> {
     }
     pub fn refresh_online_devices(&mut self) {
         let mut offline_device = Vec::new();
-        let mut iter_online = self.online.iter_mut();
-        while let Some((id, t)) = iter_online.next() {
+        let iter_online = self.online.iter_mut();
+        for (id, t) in iter_online {
             match t.send(Ping, std::io::sink()) {
                 Ok(ExecuteResult::Ok) => continue,
                 _ => offline_device.push(*id),
@@ -217,7 +271,7 @@ impl<const N: usize> DeviceManager<N> {
         }
     }
     pub fn get_online_device_id(&self) -> Vec<u128> {
-        self.online.iter().map(|(id, _)| *id).collect::<Vec<u128>>()
+        self.online.keys().copied().collect::<Vec<u128>>()
     }
     pub fn scan(&mut self) -> io::Result<()> {
         type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
@@ -225,9 +279,9 @@ impl<const N: usize> DeviceManager<N> {
         let mut buffer = [0; 256];
         self.refresh_online_devices();
         let online_device_id = self.get_online_device_id();
-        let mut iter_all_device = self.all.iter();
+        let iter_all_device = self.all.iter();
         let is_running = Arc::new(AtomicBool::new(true));
-        while let Some(device) = iter_all_device.next() {
+        for device in iter_all_device {
             if online_device_id.contains(device.get_id()) {
                 continue;
             }
@@ -252,7 +306,7 @@ impl<const N: usize> DeviceManager<N> {
                 .is_running(is_running.clone())
                 .prefix(":eagle-eye:")
                 .data(data_len.to_be_bytes())
-                .data(&iv)
+                .data(iv)
                 .data(encrypted)
                 .broadcast_addr(SocketAddr::new(
                     IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),

@@ -1,4 +1,5 @@
 mod handler;
+mod receiver;
 mod utils;
 
 use std::{
@@ -8,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use eagle_eye_broadcaster::ReceiverInfo;
+use ee_broadcaster::ReceiverInfo;
 
 use crate::utils::{process, process_broadcast_data};
 
@@ -36,7 +37,7 @@ fn main() -> io::Result<()> {
 
     while let Ok(Some((addr, data))) = receiver.next() {
         let count = thread_counter.load(std::sync::atomic::Ordering::SeqCst);
-        println!("Thread Count: {}", count);
+        println!("Thread Count: {count}");
         if count >= MAX_CONNECTIONS {
             std::thread::sleep(Duration::from_millis(300));
             continue;
