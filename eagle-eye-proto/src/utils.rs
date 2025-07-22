@@ -1,4 +1,5 @@
 use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
+use ee_stream::EStreamSync;
 use rand::Rng;
 use std::{
     fs,
@@ -6,13 +7,11 @@ use std::{
     path::Path,
 };
 
-use crate::stream::EagleEyeStreamSync;
-
 pub(crate) fn handle_auth_on_server_sync<const N: usize, R: io::Read, W: io::Write>(
     key: [u8; 32],
     reader: R,
     writer: W,
-) -> io::Result<Option<EagleEyeStreamSync<N, R, W>>> {
+) -> io::Result<Option<EStreamSync<N, R, W>>> {
     let mut reader = BufReader::new(reader);
     let mut writer = BufWriter::new(writer);
     let iv = rand::rng().random::<[u8; 16]>();
@@ -32,7 +31,7 @@ pub(crate) fn handle_auth_on_server_sync<const N: usize, R: io::Read, W: io::Wri
     writer.write_all(b":0:")?;
     writer.flush()?;
     cipher.seek(0);
-    let e_stream = EagleEyeStreamSync::<N, R, W>::builder()
+    let e_stream = EStreamSync::<N, R, W>::builder()
         .cipher(cipher)
         .reader(reader)
         .writer(writer)
@@ -44,7 +43,7 @@ pub(crate) fn handle_auth_on_client_sync<const N: usize, R: io::Read, W: io::Wri
     key: [u8; 32],
     reader: R,
     writer: W,
-) -> io::Result<Option<EagleEyeStreamSync<N, R, W>>> {
+) -> io::Result<Option<EStreamSync<N, R, W>>> {
     let mut reader = BufReader::new(reader);
     let mut writer = BufWriter::new(writer);
     let mut iv = [0; 16];
@@ -60,7 +59,7 @@ pub(crate) fn handle_auth_on_client_sync<const N: usize, R: io::Read, W: io::Wri
         return Ok(None);
     }
     cipher.seek(0);
-    let e_stream = EagleEyeStreamSync::<N, R, W>::builder()
+    let e_stream = EStreamSync::<N, R, W>::builder()
         .cipher(cipher)
         .reader(reader)
         .writer(writer)

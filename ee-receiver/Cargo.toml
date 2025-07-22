@@ -7,5 +7,6 @@ edition = "2024"
 eagle-eye-broadcaster = { path = "../eagle-eye-broadcaster" }
 eagle-eye-proto = { path = "../eagle-eye-proto" }
 eagle-eye-jobs = { path = "../eagle-eye-jobs"}
+ee-stream = { path = "../ee-stream" }
 aes = { workspace = true }
 cbc = { workspace = true }

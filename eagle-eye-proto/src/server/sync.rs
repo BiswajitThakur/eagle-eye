@@ -3,9 +3,10 @@ use std::{
     path::PathBuf,
 };
 
+use ee_stream::EStreamSync;
+
 use crate::{
     FlowControl,
-    stream::EagleEyeStreamSync,
     task::TaskRegisterySync,
     utils::{handle_auth_on_server_sync, write_log_sync},
 };
@@ -55,7 +56,7 @@ impl<T> EagleEyeServerSync<T> {
     }
 }
 
-impl<const N: usize, R: io::Read, W: io::Write> EagleEyeServerSync<EagleEyeStreamSync<N, R, W>> {
+impl<const N: usize, R: io::Read, W: io::Write> EagleEyeServerSync<EStreamSync<N, R, W>> {
     fn read_id<U: io::Read>(mut stream: U) -> io::Result<String> {
         let mut buf = [0; 1];
         let mut result = String::new();

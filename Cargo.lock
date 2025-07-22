@@ -135,6 +135,7 @@ dependencies = [
  "aes",
  "cbc",
  "ctr",
+ "ee-stream",
  "rand",
 ]
 
@@ -147,6 +148,15 @@ dependencies = [
  "eagle-eye-broadcaster",
  "eagle-eye-jobs",
  "eagle-eye-proto",
+ "ee-stream",
+]
+
+[[package]]
+name = "ee-stream"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "ctr",
 ]
 
 [[package]]

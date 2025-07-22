@@ -11,5 +11,6 @@ fn main() -> io::Result<()> {
         my_devices.total_online(),
         my_devices.total_device()
     );
+    std::thread::sleep(std::time::Duration::from_secs(30));
     Ok(())
 }

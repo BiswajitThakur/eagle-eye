@@ -5,15 +5,16 @@ use std::{
     path::PathBuf,
 };
 
+use ee_stream::EStreamSync;
+
 use crate::{
     FlowControl,
-    stream::EagleEyeStreamSync,
     task::{ExecuteResult, TaskSync},
     utils::handle_auth_on_client_sync,
 };
 
 pub struct TaskSenderSync<const N: usize, R: io::Read, W: io::Write> {
-    stream: EagleEyeStreamSync<N, R, W>,
+    stream: EStreamSync<N, R, W>,
 }
 
 impl<const N: usize, R: io::Read, W: io::Write> io::Read for TaskSenderSync<N, R, W> {
@@ -32,7 +33,7 @@ impl<const N: usize, R: io::Read, W: io::Write> io::Write for TaskSenderSync<N, 
 }
 
 impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
-    pub fn new(value: EagleEyeStreamSync<N, R, W>) -> Self {
+    pub fn new(value: EStreamSync<N, R, W>) -> Self {
         Self { stream: value }
     }
 }
