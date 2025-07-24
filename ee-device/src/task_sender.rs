@@ -1,5 +1,6 @@
 use std::io::{self, Read, Write};
 
+use ee_http::HttpRequest;
 use ee_stream::{EStreamSync, FlowControl};
 use ee_task::{ExeSenderSync, ExecuteResult};
 
@@ -32,6 +33,7 @@ impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
     pub fn send<U: io::Write, T: for<'a> ExeSenderSync<&'a mut Self, U>>(
         &mut self,
         task: T,
+        req: &mut HttpRequest,
         http: U,
     ) -> io::Result<ExecuteResult> {
         let mut buf = [0; 1];
@@ -44,7 +46,7 @@ impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
         }
         match flow.unwrap() {
             FlowControl::Close | FlowControl::StopServer => Ok(ExecuteResult::UnknownTask),
-            FlowControl::Continue => task.execute_on_sender(self, http),
+            FlowControl::Continue => task.execute_on_sender(self, req, http),
         }
     }
 

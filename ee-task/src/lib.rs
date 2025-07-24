@@ -1,5 +1,7 @@
 use std::io;
 
+use ee_http::HttpRequest;
+
 pub mod file;
 pub mod ping_pong;
 
@@ -8,7 +10,12 @@ pub trait GetId {
 }
 
 pub trait ExeSenderSync<T: io::Read + io::Write, W: io::Write>: GetId {
-    fn execute_on_sender(&self, stream: T, http: W) -> io::Result<ExecuteResult>;
+    fn execute_on_sender(
+        &self,
+        stream: T,
+        req: &mut HttpRequest,
+        http: W,
+    ) -> io::Result<ExecuteResult>;
 }
 
 pub trait ExeReceiverSync<T: io::Read + io::Write>: GetId {

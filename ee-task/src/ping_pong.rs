@@ -1,5 +1,7 @@
 use std::io;
 
+use ee_http::HttpRequest;
+
 use crate::{ExeSenderSync, ExecuteResult, GetId};
 
 pub struct Ping;
@@ -11,7 +13,12 @@ impl GetId for Ping {
 }
 
 impl<T: io::Read + io::Write, W: io::Write> ExeSenderSync<T, W> for Ping {
-    fn execute_on_sender(&self, mut stream: T, _: W) -> std::io::Result<ExecuteResult> {
+    fn execute_on_sender(
+        &self,
+        mut stream: T,
+        req: &mut HttpRequest,
+        _: W,
+    ) -> std::io::Result<ExecuteResult> {
         let mut buf = [0; 4];
         stream.write_all(b"ping")?;
         stream.flush()?;

@@ -9,6 +9,7 @@ ee-task = { path = "../ee-task" }
 ee-http = { path = "../ee-http" }
 ee-device = { path = "../ee-device" }
 aes = { workspace = true }
+base64 = { workspace = true }
 ctr = { workspace = true }
 rand = { workspace = true }
 cbc = { workspace = true }

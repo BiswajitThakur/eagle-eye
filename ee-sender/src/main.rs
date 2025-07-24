@@ -5,13 +5,14 @@ use std::{
     str::FromStr,
 };
 
-use ee_device::{Device, DeviceManager};
+use ee_device::{ClientSync, Device, DeviceManager};
 use ee_http::{HttpRequest, HttpResponse, Method};
+use ee_task::file::RemoveFile;
 
 fn main() -> io::Result<()> {
+    let client = ClientSync::new();
     let mut my_devices = DeviceManager::<512>::new();
     my_devices.push_device(Device::new().id(123).key([33; 32]));
-    my_devices.scan()?;
     println!(
         "No of online Devices: {}/{}",
         my_devices.total_online(),
@@ -23,7 +24,7 @@ fn main() -> io::Result<()> {
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut writer = BufWriter::new(stream);
         loop {
-            match handle::<512>(&mut reader, &mut writer, &mut my_devices) {
+            match handle::<512>(&client, &mut reader, &mut writer, &mut my_devices) {
                 _ => break,
             }
         }
@@ -38,6 +39,7 @@ fn my_print<T: std::fmt::Display>(v: T) {
 }
 
 fn handle<const N: usize>(
+    client: &ClientSync,
     reader: &mut BufReader<TcpStream>,
     writer: &mut BufWriter<TcpStream>,
     manager: &mut DeviceManager<N>,
@@ -46,8 +48,13 @@ fn handle<const N: usize>(
     my_print(req.get_path());
     match req.get_path() {
         "/scan" => {
-            manager.scan()?;
+            manager.scan(client)?;
             HttpResponse::new().send_str(writer, "success")?;
+        }
+        "/online_device" => {}
+        v if v.starts_with("/send/") => {
+            let id = v.strip_prefix("/send/").unwrap();
+            let v = manager.send(client, id, &mut req, &mut writer, RemoveFile::new("hello"));
         }
         _ => {}
     }

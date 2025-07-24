@@ -7,6 +7,7 @@ edition = "2024"
 ee-broadcaster = { path = "../ee-broadcaster" }
 ee-task = { path = "../ee-task" }
 ee-stream = { path = "../ee-stream" }
+ee-http = { path = "../ee-http" }
 aes = { workspace = true }
 cbc = { workspace = true }
 ctr = { workspace = true }

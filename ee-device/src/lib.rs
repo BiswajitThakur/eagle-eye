@@ -1,11 +1,12 @@
 mod task_sender;
 mod utils;
 
+use ee_http::HttpRequest;
 pub use task_sender::TaskSenderSync;
 
 use std::{
     collections::HashMap,
-    io::{self, Read, Write},
+    io::{self, BufWriter, Read, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream},
     path::PathBuf,
     sync::{Arc, atomic::AtomicBool},
@@ -14,7 +15,7 @@ use std::{
 
 use aes::cipher::{BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
 use ee_broadcaster::SenderInfo;
-use ee_task::{ExecuteResult, ping_pong::Ping};
+use ee_task::{ExeSenderSync, ExecuteResult, ping_pong::Ping};
 
 use crate::utils::handle_auth_on_sender_sync;
 
@@ -142,6 +143,89 @@ impl Device {
     pub fn get_user(&self) -> &str {
         self.user.as_str()
     }
+    pub fn connect_sync(&self, timeout: Duration) -> io::Result<Option<TcpStream>> {
+        type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
+        let mut buffer = [0; 256];
+        let is_running = Arc::new(AtomicBool::new(true));
+        let listener = TcpListener::bind(SocketAddr::new(
+            std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            0,
+        ))?;
+        let addr = listener.local_addr()?;
+        let listener_port = addr.port();
+        let iv = rand::random::<[u8; 16]>();
+        let secret = rand::random::<[u8; 16]>();
+        let ct = Aes256CbcEnc::new(self.get_key().into(), &iv.into());
+        let id_bytes = &self.get_id().to_be_bytes(); // 16 bytes = 128 bit
+        buffer[..16].copy_from_slice(id_bytes);
+        buffer[16..32].copy_from_slice(&secret);
+        buffer[32..34].copy_from_slice(&listener_port.to_be_bytes());
+        let encrypted = ct.encrypt_padded_mut::<Pkcs7>(&mut buffer, 34).unwrap();
+        let data_len = encrypted.len() as u16 + iv.len() as u16;
+
+        is_running.store(true, std::sync::atomic::Ordering::Relaxed);
+        let v = SenderInfo::builder()
+            .is_running(is_running.clone())
+            .prefix(":eagle-eye:")
+            .data(data_len.to_be_bytes())
+            .data(iv)
+            .data(encrypted)
+            .broadcast_addr(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
+                6923,
+            ))
+            .socket_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0))
+            .build();
+        let (send, recv) = std::sync::mpsc::channel::<TcpStream>();
+        let t1 = std::thread::spawn(move || v.send());
+        let t2 = std::thread::spawn(move || {
+            let mut buf = [0; 16];
+            for stream in listener.incoming() {
+                if stream.is_err() {
+                    break;
+                }
+                let mut stream = stream.unwrap();
+                if stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .is_err()
+                {
+                    break;
+                }
+                if stream.read_exact(&mut buf[0..1]).is_err() {
+                    continue;
+                }
+                if buf[0] == 111 {
+                    break;
+                }
+                if stream.read_exact(&mut buf).is_err() {
+                    continue;
+                }
+                if buf == secret {
+                    send.send(stream).unwrap();
+                    break;
+                }
+            }
+        });
+
+        let now = std::time::Instant::now();
+        loop {
+            std::thread::sleep(Duration::from_millis(200));
+            if let Ok(stream) = recv.try_recv() {
+                is_running.store(false, std::sync::atomic::Ordering::Relaxed);
+                return Ok(Some(stream));
+            }
+            if now.elapsed() > timeout {
+                // stop t1 and t2 thread
+                is_running.store(false, std::sync::atomic::Ordering::Relaxed);
+                let mut v = TcpStream::connect(addr)?;
+                v.write_all(&[111])?;
+                break;
+            }
+        }
+        t1.join().unwrap()?;
+        t2.join().unwrap();
+        Ok(None)
+    }
 }
 
 pub struct ClientSync {
@@ -189,7 +273,6 @@ impl ClientSync {
 }
 
 pub struct DeviceManager<const N: usize> {
-    client: ClientSync,
     // online devices
     online: HashMap<u128, TaskSenderSync<N, TcpStream, TcpStream>>,
     // u128: device id
@@ -206,9 +289,38 @@ impl<const N: usize> Default for DeviceManager<N> {
 impl<const N: usize> DeviceManager<N> {
     pub fn new() -> Self {
         Self {
-            client: ClientSync::new(),
             online: HashMap::new(),
             all: Vec::new(),
+        }
+    }
+    pub fn send<
+        T: for<'a, 'b> ExeSenderSync<
+                &'a mut TaskSenderSync<N, TcpStream, TcpStream>,
+                &'b mut BufWriter<TcpStream>,
+            >,
+    >(
+        &mut self,
+        client: &ClientSync,
+        id: &u128,
+        req: &mut HttpRequest,
+        http: &mut BufWriter<TcpStream>,
+        task: T,
+    ) -> io::Result<ExecuteResult> {
+        if let Some(t) = self.online.get_mut(id) {
+            t.send(task, req, http)
+        } else {
+            if let Some(device) = self.all.iter().find(|&v| v.get_id() == id) {
+                let v = device.connect_sync(Duration::from_secs(5))?;
+                if v.is_none() {
+                    return Err(io::Error::other("Device is offline"));
+                }
+                let stream = v.unwrap();
+                let mut sender = client.connect::<N>(device.key, stream)?;
+                let r = sender.send(task, req, http);
+                self.online.insert(*id, sender);
+                return r;
+            }
+            Err(io::Error::other("Device not found"))
         }
     }
     pub fn from_reader<R: io::Read>(mut reader: R) -> io::Result<Self> {
@@ -225,7 +337,6 @@ impl<const N: usize> DeviceManager<N> {
             total_device -= 1;
         }
         Ok(Self {
-            client: ClientSync::new(),
             online: HashMap::new(),
             all: devices,
         })
@@ -261,7 +372,7 @@ impl<const N: usize> DeviceManager<N> {
         let mut offline_device = Vec::new();
         let iter_online = self.online.iter_mut();
         for (id, t) in iter_online {
-            match t.send(Ping, std::io::sink()) {
+            match t.send(Ping, &mut HttpRequest::default(), std::io::sink()) {
                 Ok(ExecuteResult::Ok) => continue,
                 _ => offline_device.push(*id),
             }
@@ -273,97 +384,19 @@ impl<const N: usize> DeviceManager<N> {
     pub fn get_online_device_id(&self) -> Vec<u128> {
         self.online.keys().copied().collect::<Vec<u128>>()
     }
-    pub fn scan(&mut self) -> io::Result<()> {
-        type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
-        let client = ClientSync::new();
-        let mut buffer = [0; 256];
+    pub fn scan(&mut self, client: &ClientSync) -> io::Result<()> {
         self.refresh_online_devices();
         let online_device_id = self.get_online_device_id();
         let iter_all_device = self.all.iter();
-        let is_running = Arc::new(AtomicBool::new(true));
         for device in iter_all_device {
             if online_device_id.contains(device.get_id()) {
                 continue;
             }
-            let listener = TcpListener::bind(SocketAddr::new(
-                std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                0,
-            ))?;
-            let addr = listener.local_addr()?;
-            let listener_port = addr.port();
-            let iv = rand::random::<[u8; 16]>();
-            let secret = rand::random::<[u8; 16]>();
-            let ct = Aes256CbcEnc::new(device.get_key().into(), &iv.into());
-            let id_bytes = &device.get_id().to_be_bytes(); // 16 bytes = 128 bit
-            buffer[..16].copy_from_slice(id_bytes);
-            buffer[16..32].copy_from_slice(&secret);
-            buffer[32..34].copy_from_slice(&listener_port.to_be_bytes());
-            let encrypted = ct.encrypt_padded_mut::<Pkcs7>(&mut buffer, 34).unwrap();
-            let data_len = encrypted.len() as u16 + iv.len() as u16;
-
-            is_running.store(true, std::sync::atomic::Ordering::Relaxed);
-            let v = SenderInfo::builder()
-                .is_running(is_running.clone())
-                .prefix(":eagle-eye:")
-                .data(data_len.to_be_bytes())
-                .data(iv)
-                .data(encrypted)
-                .broadcast_addr(SocketAddr::new(
-                    IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
-                    6923,
-                ))
-                .socket_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0))
-                .build();
-            let (send, recv) = std::sync::mpsc::channel::<TcpStream>();
-            let t1 = std::thread::spawn(move || v.send());
-            let t2 = std::thread::spawn(move || {
-                let mut buf = [0; 16];
-                for stream in listener.incoming() {
-                    if stream.is_err() {
-                        break;
-                    }
-                    let mut stream = stream.unwrap();
-                    if stream
-                        .set_read_timeout(Some(Duration::from_secs(1)))
-                        .is_err()
-                    {
-                        break;
-                    }
-                    if stream.read_exact(&mut buf[0..1]).is_err() {
-                        continue;
-                    }
-                    if buf[0] == 111 {
-                        break;
-                    }
-                    if stream.read_exact(&mut buf).is_err() {
-                        continue;
-                    }
-                    if buf == secret {
-                        send.send(stream).unwrap();
-                        break;
-                    }
-                }
-            });
-
-            let now = std::time::Instant::now();
-            loop {
-                std::thread::sleep(Duration::from_millis(200));
-                if let Ok(stream) = recv.try_recv() {
-                    is_running.store(false, std::sync::atomic::Ordering::Relaxed);
-                    let t = client.connect::<N>(device.key, stream)?;
-                    self.online.insert(*device.get_id(), t);
-                    break;
-                }
-                if now.elapsed() > Duration::from_secs(5) {
-                    // stop t1 and t2 thread
-                    is_running.store(false, std::sync::atomic::Ordering::Relaxed);
-                    let mut v = TcpStream::connect(addr)?;
-                    v.write_all(&[111])?;
-                    break;
-                }
+            let stream_option = device.connect_sync(Duration::from_secs(5))?;
+            if let Some(stream) = stream_option {
+                let t = client.connect::<N>(device.key, stream)?;
+                self.online.insert(*device.get_id(), t);
             }
-            t1.join().unwrap()?;
-            t2.join().unwrap();
         }
         Ok(())
     }

@@ -1,6 +1,6 @@
 use std::{ffi::OsString, io, str::FromStr};
 
-use ee_http::HttpResponse;
+use ee_http::{HttpRequest, HttpResponse};
 
 use crate::{ExeSenderSync, ExecuteResult, GetId};
 
@@ -21,7 +21,12 @@ impl GetId for RemoveFile {
 }
 
 impl<T: io::Read + io::Write, W: io::Write> ExeSenderSync<T, W> for RemoveFile {
-    fn execute_on_sender(&self, mut stream: T, http: W) -> std::io::Result<ExecuteResult> {
+    fn execute_on_sender(
+        &self,
+        mut stream: T,
+        req: &mut HttpRequest,
+        http: W,
+    ) -> std::io::Result<ExecuteResult> {
         let mut buf = [0; 1];
         let path = self.path.to_string_lossy();
         let bytes = path.as_bytes();
