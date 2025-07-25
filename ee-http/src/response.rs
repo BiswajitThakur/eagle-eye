@@ -1,20 +1,27 @@
 use std::{
     borrow::Cow,
     ffi::OsStr,
-    fmt,
     io::{self, BufReader},
     path::Path,
 };
 
-use crate::Status;
+use crate::{HttpRequest, Status};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Connection {
+    KeepAlive,
+    #[default]
+    Close,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpResponse {
-    protocol_version: String,
-    status: Status,
-    content_type: Option<String>,
-    content_length: Option<usize>,
-    headers: Vec<(String, String)>,
+    pub(crate) protocol_version: String,
+    pub(crate) status: Status,
+    pub(crate) connection: Connection,
+    pub(crate) content_type: Option<String>,
+    pub(crate) content_length: Option<usize>,
+    pub(crate) headers: Vec<(String, String)>,
 }
 
 impl Default for HttpResponse {
@@ -22,10 +29,27 @@ impl Default for HttpResponse {
         Self {
             protocol_version: "HTTP/1.1".to_owned(),
             status: Status::default(),
+            connection: Connection::default(),
             content_type: None,
             content_length: None,
             headers: Vec::new(),
         }
+    }
+}
+
+impl From<&HttpRequest> for HttpResponse {
+    fn from(req: &HttpRequest) -> Self {
+        HttpResponse::new()
+            .protocol_version(&req.protocol_version)
+            .connection(
+                req.get_header("Connection")
+                    .and_then(|v| match v {
+                        "keep-alive" => Some(Connection::KeepAlive),
+                        "close" => Some(Connection::Close),
+                        _ => Some(Connection::Close),
+                    })
+                    .unwrap(),
+            )
     }
 }
 
@@ -53,6 +77,13 @@ impl HttpResponse {
     }
     pub fn get_content_type(&self) -> Option<&str> {
         self.content_type.as_deref()
+    }
+    pub fn connection(mut self, connection: Connection) -> Self {
+        self.connection = connection;
+        self
+    }
+    pub fn get_connection(&self) -> &Connection {
+        &self.connection
     }
     pub fn content_length(mut self, value: usize) -> Self {
         self.content_length = Some(value);
@@ -87,6 +118,10 @@ impl HttpResponse {
                 .content_type
                 .as_ref()
                 .map(|v| Cow::Borrowed(v.as_str())),
+            "Connection" => match self.connection {
+                Connection::KeepAlive => Some(Cow::Borrowed("keep-alive")),
+                Connection::Close => Some(Cow::Borrowed("close")),
+            },
             "Content-Length" => self.content_length.map(|v| Cow::Owned(v.to_string())),
             v => self
                 .headers
@@ -95,13 +130,22 @@ impl HttpResponse {
                 .map(|u| Cow::Borrowed(u.0.as_str())),
         }
     }
-    pub fn send<W: io::Write>(self, mut stream: W) -> io::Result<()> {
+    pub fn send<W: io::Write>(self, req: &HttpRequest, mut stream: W) -> io::Result<()> {
         write!(stream, "{} {}\r\n", self.protocol_version, self.status)?;
         if self.content_type.is_some() {
-            write!(stream, "Content-Type: {}", self.content_type.unwrap())?;
+            write!(
+                stream,
+                "Content-Type: {}",
+                self.content_type.as_ref().unwrap()
+            )?;
         }
-        for (key, value) in self.headers {
+        for (key, value) in self.headers.iter() {
             write!(stream, "{key}: {value}\r\n")?;
+        }
+        if self.get_header("Connection").is_none() {
+            if let Some(v) = req.get_header("Connection") {
+                write!(stream, "Connection: {}\r\n", v)?;
+            }
         }
         write!(stream, "\r\n")?;
         stream.flush()

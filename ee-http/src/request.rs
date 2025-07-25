@@ -4,11 +4,11 @@ use crate::Method;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct HttpRequest {
-    method: Method,
-    path: String,
-    protocol_version: String,
-    headers: HashMap<String, String>,
-    body: Option<Vec<u8>>,
+    pub(crate) method: Method,
+    pub(crate) path: String,
+    pub(crate) protocol_version: String,
+    pub(crate) headers: HashMap<String, String>,
+    pub(crate) body: Option<Vec<u8>>,
 }
 
 impl HttpRequest {

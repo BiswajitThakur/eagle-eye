@@ -6,18 +6,16 @@ use std::{
 };
 
 use ee_device::{ClientSync, Device, DeviceManager};
-use ee_http::{HttpRequest, HttpResponse, Method};
-use ee_task::file::RemoveFile;
+use ee_http::{HttpRequest, HttpResponse, Method, Status};
+use ee_task::{ExecuteResult, file::RemoveFile};
 
 fn main() -> io::Result<()> {
     let client = ClientSync::new();
     let mut my_devices = DeviceManager::<512>::new();
     my_devices.push_device(Device::new().id(123).key([33; 32]));
-    println!(
-        "No of online Devices: {}/{}",
-        my_devices.total_online(),
-        my_devices.total_device()
-    );
+    my_devices.push_device(Device::new().id(3).key([0; 32]));
+    my_devices.push_device(Device::new().id(10).key([17; 32]));
+    my_devices.push_device(Device::new().id(15).key([123; 32]));
     let listener = TcpListener::bind("0.0.0.0:8080")?;
     for stream in listener.incoming() {
         let stream = stream?;
@@ -45,18 +43,32 @@ fn handle<const N: usize>(
     manager: &mut DeviceManager<N>,
 ) -> io::Result<bool> {
     let mut req = get_http_request(reader)?;
-    my_print(req.get_path());
     match req.get_path() {
         "/scan" => {
             manager.scan(client)?;
-            HttpResponse::new().send_str(writer, "success")?;
+            HttpResponse::new().send_str(
+                writer,
+                format!(
+                    "No of online device: {}/{}",
+                    manager.total_online(),
+                    manager.total_device()
+                ),
+            )?;
         }
         "/online_device" => {}
-        v if v.starts_with("/send/") => {
-            let id = v.strip_prefix("/send/").unwrap();
-            let v = manager.send(client, id, &mut req, &mut writer, RemoveFile::new("hello"));
+        v if v.starts_with("/send/rm") => {
+            //let id = v.strip_prefix("/send/").unwrap();
+            let _ = manager.send(
+                client,
+                &123,
+                &mut req,
+                writer,
+                RemoveFile::new("hello".into()),
+            );
         }
-        _ => {}
+        _ => HttpResponse::default()
+            .status(Status::NotFound)
+            .send_file(writer, "web/404.html")?,
     }
     Ok(req.get_header("Connection") == Some("keep-alive"))
 }
@@ -93,7 +105,6 @@ fn get_http_request(reader: &mut BufReader<TcpStream>) -> io::Result<HttpRequest
         if line.is_empty() {
             break;
         }
-        my_print(line);
         let v = line
             .split_once(':')
             .map(|(x, y)| (x.trim(), y.trim()))

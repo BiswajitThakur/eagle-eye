@@ -230,6 +230,7 @@ impl Device {
 
 pub struct ClientSync {
     id: u128,
+    device_connect_time_out: Duration,
     // devices: Vec<Device>,
     log: Option<PathBuf>,
 }
@@ -244,12 +245,16 @@ impl ClientSync {
     pub fn new() -> Self {
         Self {
             id: 0,
-            // devices: Vec::new(),
+            device_connect_time_out: Duration::from_secs(3),
             log: None,
         }
     }
     pub fn log<T: Into<PathBuf>>(mut self, path: T) -> Self {
         self.log = Some(path.into());
+        self
+    }
+    pub fn device_connect_time_out(mut self, t: Duration) -> Self {
+        self.device_connect_time_out = t;
         self
     }
     pub fn connect<const N: usize>(
@@ -310,7 +315,7 @@ impl<const N: usize> DeviceManager<N> {
             t.send(task, req, http)
         } else {
             if let Some(device) = self.all.iter().find(|&v| v.get_id() == id) {
-                let v = device.connect_sync(Duration::from_secs(5))?;
+                let v = device.connect_sync(client.device_connect_time_out)?;
                 if v.is_none() {
                     return Err(io::Error::other("Device is offline"));
                 }
