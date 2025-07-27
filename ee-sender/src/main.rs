@@ -8,7 +8,7 @@ use std::{
 
 use ee_device::{ClientSync, Device, DeviceManager};
 use ee_http::{HttpRequest, HttpResponse, Method, Status};
-use ee_task::{ExecuteResult, file::RemoveFile};
+use ee_task::{ExecuteResult, file::RemoveFileSync};
 
 fn main() -> io::Result<()> {
     let client = ClientSync::new().device_connect_time_out(Duration::from_secs(3));
