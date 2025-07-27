@@ -170,6 +170,26 @@ impl HttpResponse {
         stream.write_all(bytes)?;
         stream.flush()
     }
+    pub fn send_json_str<W: io::Write, T: AsRef<str>>(
+        self,
+        mut stream: W,
+        value: T,
+    ) -> io::Result<()> {
+        let bytes = value.as_ref().as_bytes();
+        write!(stream, "{} {}\r\n", self.protocol_version, self.status)?;
+        write!(stream, "Content-Type: application/json\r\n")?;
+        write!(
+            stream,
+            "Content-Length: {}\r\n",
+            self.content_length.unwrap_or(bytes.len())
+        )?;
+        for (key, value) in self.headers {
+            write!(stream, "{key}: {value}\r\n")?;
+        }
+        write!(stream, "\r\n")?;
+        stream.write_all(bytes)?;
+        stream.flush()
+    }
     pub fn send_file<W: io::Write, P: AsRef<Path>>(self, mut stream: W, path: P) -> io::Result<()> {
         let path = path.as_ref();
         let ext = path.extension();
@@ -226,6 +246,7 @@ impl HttpResponse {
         }
         write!(stream, "\r\n")?;
         std::io::copy(&mut file_reader, &mut stream)?;
+        stream.flush()?;
         Ok(())
     }
 }

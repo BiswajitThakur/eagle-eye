@@ -3,6 +3,7 @@ use std::{
     io::{self, BufRead, BufReader, BufWriter, Write},
     net::{TcpListener, TcpStream},
     str::FromStr,
+    time::Duration,
 };
 
 use ee_device::{ClientSync, Device, DeviceManager};
@@ -10,7 +11,7 @@ use ee_http::{HttpRequest, HttpResponse, Method, Status};
 use ee_task::{ExecuteResult, file::RemoveFile};
 
 fn main() -> io::Result<()> {
-    let client = ClientSync::new();
+    let client = ClientSync::new().device_connect_time_out(Duration::from_secs(3));
     let mut my_devices = DeviceManager::<512>::new();
     my_devices.push_device(Device::new().id(123).key([33; 32]));
     my_devices.push_device(Device::new().id(3).key([0; 32]));
@@ -19,11 +20,17 @@ fn main() -> io::Result<()> {
     let listener = TcpListener::bind("0.0.0.0:8080")?;
     for stream in listener.incoming() {
         let stream = stream?;
+        stream.set_read_timeout(Some(Duration::from_secs(3)))?;
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut writer = BufWriter::new(stream);
         loop {
             match handle::<512>(&client, &mut reader, &mut writer, &mut my_devices) {
-                _ => break,
+                Ok(true) => continue,
+                Ok(false) => break,
+                Err(err) => {
+                    eprintln!("{}\n", err);
+                    break;
+                }
             }
         }
     }
@@ -43,28 +50,32 @@ fn handle<const N: usize>(
     manager: &mut DeviceManager<N>,
 ) -> io::Result<bool> {
     let mut req = get_http_request(reader)?;
+    my_print(format!("{:?}", &req));
     match req.get_path() {
-        "/scan" => {
+        "/" => HttpResponse::new().send_file(writer, "web/index.html")?,
+        "/api/scan-devices" => {
             manager.scan(client)?;
-            HttpResponse::new().send_str(
+            HttpResponse::new().send_json_str(
                 writer,
                 format!(
-                    "No of online device: {}/{}",
+                    "{{\"online\":{},\"total\":{}}}",
                     manager.total_online(),
                     manager.total_device()
                 ),
             )?;
         }
-        "/online_device" => {}
-        v if v.starts_with("/send/rm") => {
+        "/err" => {}
+        "/api" | "/api/" => {
+            handle_api(client, &mut req, writer)?;
             //let id = v.strip_prefix("/send/").unwrap();
+            /*
             let _ = manager.send(
                 client,
                 &123,
                 &mut req,
                 writer,
                 RemoveFile::new("hello".into()),
-            );
+            );*/
         }
         _ => HttpResponse::default()
             .status(Status::NotFound)
@@ -125,4 +136,12 @@ fn get_http_request(reader: &mut BufReader<TcpStream>) -> io::Result<HttpRequest
         .version(version)
         .headers(headers)
         .body(body))
+}
+
+fn handle_api(
+    client: &ClientSync,
+    req: &mut HttpRequest,
+    writer: &mut BufWriter<TcpStream>,
+) -> io::Result<()> {
+    todo!()
 }

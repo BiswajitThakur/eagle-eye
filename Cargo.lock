@@ -92,10 +92,6 @@ name = "ee-broadcaster"
 version = "0.1.0"
 
 [[package]]
-name = "ee-cli"
-version = "0.1.0"
-
-[[package]]
 name = "ee-device"
 version = "0.1.0"
 dependencies = [

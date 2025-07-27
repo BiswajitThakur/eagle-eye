@@ -2,7 +2,6 @@
 resolver = "3"
 members = [
     "ee-broadcaster",
-    "ee-cli",
     "ee-sender",
     "ee-receiver",
     "ee-task",

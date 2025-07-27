@@ -41,7 +41,12 @@ impl<T: io::Read + io::Write, W: io::Write> ExeSenderSync<T, W> for RemoveFile {
             res.send_str(http, "ERROR: faild to remove file")?;
             return Err(io::Error::other("Invalid Execution Result"));
         } else {
-            res.send_str(http, "OK: success")?;
+            match r.unwrap() {
+                ExecuteResult::Ok => {
+                    HttpResponse::new().send_json_str(http, r#"{"status":"ok"}"#)?
+                }
+                _ => HttpResponse::new().send_json_str(http, r#"{"status":"faild"}"#)?,
+            }
         }
         Ok(r.unwrap())
     }
