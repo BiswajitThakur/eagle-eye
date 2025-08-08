@@ -8,37 +8,44 @@ use std::{
 
 use ee_broadcaster::ReceiverInfo;
 use ee_stream::{EStreamSync, FlowControl};
-use ee_task::{ExeReceiverSync, TaskRegisterySync};
+use ee_task::{ExeReceiverSync, create_task_registery};
 
 use crate::utils::{handle_auth_on_receiver_sync, process_broadcast_data};
 
-pub struct ReceiverConfigSync<'a, T> {
+create_task_registery!(
+    pub ReceiverTaskRegisterySync,
+    for<'a> fn(
+        EStreamSync<N, &'a TcpStream, &'a TcpStream>,
+    ) -> io::Result<EStreamSync<N, &'a TcpStream, &'a TcpStream>>
+);
+
+pub struct ReceiverConfigSync<'a, const N: usize> {
     id: u128,
     key: [u8; 32],
-    broadcast_socket_addr: SocketAddr,
+    socket_addr: SocketAddr,
     broadcast_buf: Option<&'a mut [u8]>,
     broadcast_data_prefix: &'static str,
     max_connection: usize,
-    handler: TaskRegisterySync<T>,
+    handler: ReceiverTaskRegisterySync<N>,
     log: Option<PathBuf>,
 }
 
-impl<'a, T> Default for ReceiverConfigSync<'a, T> {
+impl<'a, const N: usize> Default for ReceiverConfigSync<'a, N> {
     fn default() -> Self {
         Self {
             id: 0,
             key: [0; 32],
-            broadcast_socket_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6923),
+            socket_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6923),
             broadcast_buf: None,
             broadcast_data_prefix: "",
             max_connection: 4,
-            handler: TaskRegisterySync::default(),
+            handler: ReceiverTaskRegisterySync::default(),
             log: None,
         }
     }
 }
 
-impl<'a, T> ReceiverConfigSync<'a, T> {
+impl<'a, const N: usize> ReceiverConfigSync<'a, N> {
     pub fn id(mut self, id: u128) -> Self {
         self.id = id;
         self
@@ -52,7 +59,7 @@ impl<'a, T> ReceiverConfigSync<'a, T> {
         self
     }
     pub fn socket_addr(mut self, addr: SocketAddr) -> Self {
-        self.broadcast_socket_addr = addr;
+        self.socket_addr = addr;
         self
     }
     pub fn broadcast_buf(mut self, buf: &'a mut [u8]) -> Self {
@@ -67,16 +74,13 @@ impl<'a, T> ReceiverConfigSync<'a, T> {
         self.max_connection = v;
         self
     }
-}
-
-impl<T: io::Read + io::Write> ReceiverConfigSync<'_, T> {
-    pub fn register<A: ExeReceiverSync<T>>(&mut self) -> &mut Self {
+    pub fn register<A: ExeReceiverSync<N>>(&mut self) -> &mut Self {
         self.handler.register(A::id(), A::execute_on_receiver);
         self
     }
 }
 
-pub struct AppSync<'a, T> {
+pub struct AppSync<'a, const N: usize> {
     id: u128,
     key: [u8; 32],
     broadcast_socket_addr: SocketAddr,
@@ -85,15 +89,15 @@ pub struct AppSync<'a, T> {
     max_connection: usize,
     count_connection: Arc<AtomicUsize>,
     log: Option<PathBuf>,
-    handler: Arc<TaskRegisterySync<T>>,
+    handler: Arc<ReceiverTaskRegisterySync<N>>,
 }
 
-impl<'a, T> AppSync<'a, T> {
-    pub fn new(config: ReceiverConfigSync<'a, T>) -> Self {
+impl<'a, const N: usize> AppSync<'a, N> {
+    pub fn new(config: ReceiverConfigSync<'a, N>) -> Self {
         let ReceiverConfigSync {
             id,
             key,
-            broadcast_socket_addr,
+            socket_addr: broadcast_socket_addr,
             broadcast_buf,
             broadcast_data_prefix,
             max_connection,
@@ -114,7 +118,7 @@ impl<'a, T> AppSync<'a, T> {
     }
 }
 
-impl<const N: usize> AppSync<'_, EStreamSync<N, TcpStream, TcpStream>> {
+impl<const N: usize> AppSync<'_, N> {
     pub fn run(self) -> io::Result<()> {
         let mut receiver = ReceiverInfo::builder()
             .prefix(self.broadcast_data_prefix)
@@ -150,7 +154,7 @@ impl<const N: usize> AppSync<'_, EStreamSync<N, TcpStream, TcpStream>> {
                         count.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                         return;
                     }
-                    let _ = Self::handle_stream(key, handler, stream.try_clone().unwrap(), stream);
+                    let _ = Self::handle_stream(key, handler, &stream, &stream);
                     count.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                 });
             } else {
@@ -161,7 +165,7 @@ impl<const N: usize> AppSync<'_, EStreamSync<N, TcpStream, TcpStream>> {
     }
 }
 
-impl<const N: usize, R: io::Read, W: io::Write> AppSync<'_, EStreamSync<N, R, W>> {
+impl<const N: usize> AppSync<'_, N> {
     fn read_task_id<U: io::Read>(mut stream: U) -> io::Result<String> {
         let mut buf = [0; 1];
         let mut result = String::new();
@@ -176,11 +180,11 @@ impl<const N: usize, R: io::Read, W: io::Write> AppSync<'_, EStreamSync<N, R, W>
     }
     pub fn handle_stream(
         key: [u8; 32],
-        handler: Arc<TaskRegisterySync<EStreamSync<N, R, W>>>,
-        r: R,
-        w: W,
+        handler: Arc<ReceiverTaskRegisterySync<N>>,
+        r: &TcpStream,
+        w: &TcpStream,
     ) -> io::Result<()> {
-        let e_stream = handle_auth_on_receiver_sync::<N, R, W>(key, r, w)?;
+        let e_stream = handle_auth_on_receiver_sync::<N, _, _>(key, r, w)?;
         if e_stream.is_none() {
             return Ok(());
         }

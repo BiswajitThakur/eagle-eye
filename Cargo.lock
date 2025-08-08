@@ -150,6 +150,7 @@ name = "ee-task"
 version = "0.1.0"
 dependencies = [
  "ee-http",
+ "ee-stream",
  "serde",
  "serde_json",
 ]

@@ -1,6 +1,10 @@
-use std::io;
+use std::{
+    io::{self, Read, Write},
+    net::TcpStream,
+};
 
 use ee_http::HttpRequest;
+use ee_stream::EStreamSync;
 
 use crate::{ExeReceiverSync, ExeSenderSync, ExecuteResult, GetId};
 
@@ -31,8 +35,10 @@ impl<T: io::Read + io::Write, W: io::Write> ExeSenderSync<T, W> for Ping {
     }
 }
 
-impl<T: io::Read + io::Write> ExeReceiverSync<T> for Ping {
-    fn execute_on_receiver(mut stream: T) -> io::Result<T> {
+impl<const N: usize> ExeReceiverSync<N> for Ping {
+    fn execute_on_receiver<'a>(
+        mut stream: EStreamSync<N, &'a TcpStream, &'a TcpStream>,
+    ) -> io::Result<EStreamSync<N, &'a TcpStream, &'a TcpStream>> {
         let mut buf = [0; 4];
         stream.read_exact(&mut buf)?;
         if *b"ping" == buf {

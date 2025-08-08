@@ -1,11 +1,13 @@
 use std::{
     ffi::OsString,
-    io,
+    io::{self, Read, Write},
+    net::TcpStream,
     path::{Path, PathBuf},
     str::FromStr,
 };
 
 use ee_http::{HttpRequest, HttpResponse};
+use ee_stream::EStreamSync;
 
 use crate::{ExeReceiverSync, ExeSenderSync, ExecuteResult, GetId};
 
@@ -57,8 +59,10 @@ impl<T: io::Read + io::Write, W: io::Write> ExeSenderSync<T, W> for RemoveFileSy
     }
 }
 
-impl<T: io::Read + io::Write> ExeReceiverSync<T> for RemoveFileSync {
-    fn execute_on_receiver(mut stream: T) -> io::Result<T> {
+impl<const N: usize> ExeReceiverSync<N> for RemoveFileSync {
+    fn execute_on_receiver<'a>(
+        mut stream: EStreamSync<N, &'a TcpStream, &'a TcpStream>,
+    ) -> io::Result<EStreamSync<N, &'a TcpStream, &'a TcpStream>> {
         let mut buf = [0; 8];
         stream.read_exact(&mut buf[0..2])?;
         let mut len = u16::from_be_bytes([buf[0], buf[1]]) as usize;

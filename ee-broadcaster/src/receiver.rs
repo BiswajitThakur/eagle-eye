@@ -25,7 +25,9 @@ impl<'a> ReceiverInfo<'a> {
             if !self.is_running.load(Ordering::Relaxed) {
                 return Ok(None);
             }
-            match socket.recv_from(self.buf) {
+            let v = socket.recv_from(self.buf);
+            dbg!("data received ( remove me )");
+            match v {
                 Ok((total, addr)) if self.buf.starts_with(&self.prefix) => {
                     return Ok(Some((addr, &mut self.buf[self.prefix.len()..total])));
                 }

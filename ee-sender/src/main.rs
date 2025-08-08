@@ -16,6 +16,7 @@ fn main() -> io::Result<()> {
     my_devices.push_device(Device::new().id(3).key([0; 32]));
     my_devices.push_device(Device::new().id(10).key([17; 32]));
     my_devices.push_device(Device::new().id(15).key([123; 32]));
+
     let listener = TcpListener::bind("0.0.0.0:8080")?;
     for stream in listener.incoming() {
         let stream = stream?;

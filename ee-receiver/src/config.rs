@@ -1,11 +1,16 @@
-use std::net::TcpStream;
+use crate::app::ReceiverConfigSync;
 
-use ee_stream::EStreamSync;
+const BROADCAST_DATA_PREFIX: &str = ":eagle-eye:";
 
-use crate::receiver::ReceiverConfigSync;
+const MAX_CONNECTIONS: usize = 3;
 
-pub fn config<'a, const N: usize>() -> ReceiverConfigSync<'a, EStreamSync<N, TcpStream, TcpStream>>
-{
-    
+pub fn config<'a, const N: usize>() -> ReceiverConfigSync<'a, N> {
+    let key: [u8; 32] = [33; 32];
+    let id: u128 = 123;
+
     ReceiverConfigSync::default()
+        .broadcast_data_prefix(BROADCAST_DATA_PREFIX)
+        .max_connection(MAX_CONNECTIONS)
+        .key(key)
+        .id(id)
 }

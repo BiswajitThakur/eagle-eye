@@ -7,9 +7,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8080',
+        target: 'http://0.0.0.0:8080',
         changeOrigin: true,
       },
-    }
+    },
+    host: '127.0.0.1',
+    port: 8081,
   }
 })

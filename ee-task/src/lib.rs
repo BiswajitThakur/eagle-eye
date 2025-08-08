@@ -1,6 +1,7 @@
-use std::io;
+use std::{io, net::TcpStream};
 
 use ee_http::HttpRequest;
+use ee_stream::EStreamSync;
 
 pub mod file;
 pub mod ping_pong;
@@ -19,8 +20,10 @@ pub trait ExeSenderSync<T: io::Read + io::Write, W: io::Write>: GetId {
     ) -> io::Result<ExecuteResult>;
 }
 
-pub trait ExeReceiverSync<T: io::Read + io::Write>: GetId {
-    fn execute_on_receiver(stream: T) -> io::Result<T>;
+pub trait ExeReceiverSync<const N: usize>: GetId {
+    fn execute_on_receiver<'a>(
+        stream: EStreamSync<N, &'a TcpStream, &'a TcpStream>,
+    ) -> io::Result<EStreamSync<N, &'a TcpStream, &'a TcpStream>>;
 }
 
 #[repr(u8)]
@@ -57,47 +60,90 @@ impl ExecuteResult {
     }
 }
 
-/// A synchronous task registry that maps string IDs to handler functions.
-#[allow(clippy::type_complexity)]
-pub struct TaskRegisterySync<T> {
-    pre_handler: Option<fn(T) -> io::Result<T>>,
-    post_handler: Option<fn(T) -> io::Result<()>>,
-    inner: Vec<(&'static str, fn(T) -> io::Result<T>)>,
+#[macro_export]
+macro_rules! create_task_registery {
+    ($v:vis $name:ident, $t:ty) => {
+        /// A synchronous task registry that maps string IDs to handler functions.
+        #[allow(clippy::type_complexity)]
+        $v struct $name<const N: usize> {
+            inner: Vec<(&'static str, $t)>,
+        }
+
+        impl<const N: usize> Default for $name<N> {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
+        impl<const N: usize> $name<N> {
+            /// Create a new empty [`TaskRegisterySync`].
+            $v fn new() -> Self {
+                Self { inner: Vec::new() }
+            }
+
+            /// Registers a new task handler by ID.
+            ///
+            /// # Panics
+            ///
+            /// Panics if:
+            /// - the ID starts and ends with `:`
+            /// - a task with the same ID already exists
+            $v fn register(&mut self, id: &'static str, f: $t) {
+                assert!(
+                    !(id.starts_with(':') && id.ends_with(':')),
+                    "ID should not start and end with `:`"
+                );
+                for &(v, _) in self.inner.iter() {
+                    assert_ne!(id, v, "already exists with this ID...");
+                }
+                self.inner.push((id, f));
+                self.inner.sort_by(|a, b| a.0.cmp(b.0));
+            }
+            $v fn len(&self) -> usize {
+                self.inner.len()
+            }
+            $v fn is_empty(&self) -> bool {
+                self.inner.is_empty()
+            }
+            $v fn capacity(&self) -> usize {
+                self.inner.capacity()
+            }
+            /// Retrieves a registered task handler by ID.
+            $v fn get<S: AsRef<str>>(&self, id: S) -> Option<$t> {
+                let v = id.as_ref();
+                self.inner
+                    .binary_search_by_key(&v, |&(a, _)| a)
+                    .ok()
+                    .map(|v| unsafe { self.inner.get_unchecked(v).1 })
+            }
+        }
+    };
 }
 
-impl<T> Default for TaskRegisterySync<T> {
+/*
+/// A synchronous task registry that maps string IDs to handler functions.
+#[allow(clippy::type_complexity)]
+pub struct ReceiverTaskRegisterySync<const N: usize> {
+    inner: Vec<(
+        &'static str,
+        for<'a> fn(
+            EStreamSync<N, &'a TcpStream, &'a TcpStream>,
+        ) -> io::Result<EStreamSync<N, &'a TcpStream, &'a TcpStream>>,
+    )>,
+}
+
+impl<const N: usize> Default for ReceiverTaskRegisterySync<N> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> TaskRegisterySync<T> {
+impl<const N: usize> ReceiverTaskRegisterySync<N> {
     /// Create a new empty [`TaskRegisterySync`].
     pub fn new() -> Self {
-        Self {
-            pre_handler: None,
-            post_handler: None,
-            inner: Vec::new(),
-        }
+        Self { inner: Vec::new() }
     }
-    fn pre_handler_default(stream: T) -> io::Result<T> {
-        Ok(stream)
-    }
-    pub fn set_pre_handler(&mut self, f: fn(T) -> io::Result<T>) {
-        self.pre_handler = Some(f);
-    }
-    pub fn get_pre_handler(&mut self) -> Option<fn(T) -> io::Result<T>> {
-        self.pre_handler
-    }
-    fn post_handler_default(stream: T) -> io::Result<()> {
-        Ok(())
-    }
-    pub fn set_post_handler(&mut self, f: fn(T) -> io::Result<()>) {
-        self.post_handler = Some(f);
-    }
-    pub fn get_post_handler(&mut self) -> Option<fn(T) -> Result<(), io::Error>> {
-        self.post_handler
-    }
+
     /// Registers a new task handler by ID.
     ///
     /// # Panics
@@ -105,7 +151,13 @@ impl<T> TaskRegisterySync<T> {
     /// Panics if:
     /// - the ID starts and ends with `:`
     /// - a task with the same ID already exists
-    pub fn register(&mut self, id: &'static str, f: fn(T) -> io::Result<T>) {
+    pub fn register(
+        &mut self,
+        id: &'static str,
+        f: for<'a> fn(
+            EStreamSync<N, &'a TcpStream, &'a TcpStream>,
+        ) -> io::Result<EStreamSync<N, &'a TcpStream, &'a TcpStream>>,
+    ) {
         assert!(
             !(id.starts_with(':') && id.ends_with(':')),
             "ID should not start and end with `:`"
@@ -126,7 +178,14 @@ impl<T> TaskRegisterySync<T> {
         self.inner.capacity()
     }
     /// Retrieves a registered task handler by ID.
-    pub fn get<S: AsRef<str>>(&self, id: S) -> Option<fn(T) -> io::Result<T>> {
+    pub fn get<S: AsRef<str>>(
+        &self,
+        id: S,
+    ) -> Option<
+        for<'a> fn(
+            EStreamSync<N, &'a TcpStream, &'a TcpStream>,
+        ) -> io::Result<EStreamSync<N, &'a TcpStream, &'a TcpStream>>,
+    > {
         let v = id.as_ref();
         self.inner
             .binary_search_by_key(&v, |&(a, _)| a)
@@ -135,7 +194,6 @@ impl<T> TaskRegisterySync<T> {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use std::io;
