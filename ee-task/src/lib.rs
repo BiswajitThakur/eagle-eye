@@ -4,6 +4,7 @@ use ee_http::HttpRequest;
 
 pub mod file;
 pub mod ping_pong;
+pub mod prelude;
 
 pub trait GetId {
     fn id() -> &'static str;

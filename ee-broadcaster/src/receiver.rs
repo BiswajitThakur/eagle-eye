@@ -8,15 +8,15 @@ use std::{
     time::Duration,
 };
 
-pub struct ReceiverInfo<const S: usize> {
+pub struct ReceiverInfo<'a> {
     prefix: Vec<u8>,
     is_running: Arc<AtomicBool>,
-    buf: [u8; S],
+    buf: &'a mut [u8],
     socket: UdpSocket,
 }
 
-impl<const S: usize> ReceiverInfo<S> {
-    pub fn builder() -> ReceiverInfoBuilder<S> {
+impl<'a> ReceiverInfo<'a> {
+    pub fn builder() -> ReceiverInfoBuilder<'a> {
         ReceiverInfoBuilder::default()
     }
     pub fn next(&mut self) -> io::Result<Option<(SocketAddr, &mut [u8])>> {
@@ -25,7 +25,7 @@ impl<const S: usize> ReceiverInfo<S> {
             if !self.is_running.load(Ordering::Relaxed) {
                 return Ok(None);
             }
-            match socket.recv_from(&mut self.buf) {
+            match socket.recv_from(self.buf) {
                 Ok((total, addr)) if self.buf.starts_with(&self.prefix) => {
                     return Ok(Some((addr, &mut self.buf[self.prefix.len()..total])));
                 }
@@ -41,27 +41,27 @@ impl<const S: usize> ReceiverInfo<S> {
     }
 }
 
-pub struct ReceiverInfoBuilder<const S: usize> {
+pub struct ReceiverInfoBuilder<'a> {
     prefix: Vec<u8>,
     is_running: Arc<AtomicBool>,
     time_out: Option<Duration>,
-    buf: [u8; S],
+    buf: Option<&'a mut [u8]>,
     socket_addr: SocketAddr,
 }
 
-impl<const S: usize> Default for ReceiverInfoBuilder<S> {
+impl<'a> Default for ReceiverInfoBuilder<'a> {
     fn default() -> Self {
         Self {
             prefix: Vec::new(),
             is_running: Arc::new(AtomicBool::new(true)),
             time_out: None,
-            buf: [0; S],
+            buf: None,
             socket_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0),
         }
     }
 }
 
-impl<const S: usize> ReceiverInfoBuilder<S> {
+impl<'a> ReceiverInfoBuilder<'a> {
     pub fn prefix<T: Into<Vec<u8>>>(mut self, value: T) -> Self {
         self.prefix = value.into();
         self
@@ -70,21 +70,21 @@ impl<const S: usize> ReceiverInfoBuilder<S> {
         self.is_running = r;
         self
     }
-    pub fn buffer(mut self, buf: [u8; S]) -> Self {
-        self.buf = buf;
+    pub fn buffer(mut self, buf: &'a mut [u8]) -> Self {
+        self.buf = Some(buf);
         self
     }
     pub fn socket_addr(mut self, addr: SocketAddr) -> Self {
         self.socket_addr = addr;
         self
     }
-    pub fn build(self) -> io::Result<ReceiverInfo<S>> {
+    pub fn build(self) -> io::Result<ReceiverInfo<'a>> {
         let socket = UdpSocket::bind(self.socket_addr)?;
         socket.set_read_timeout(self.time_out)?;
         Ok(ReceiverInfo {
             prefix: self.prefix,
             is_running: self.is_running,
-            buf: self.buf,
+            buf: self.buf.expect("Buffer not found..."),
             socket,
         })
     }

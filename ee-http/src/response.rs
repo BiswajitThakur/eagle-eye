@@ -43,10 +43,10 @@ impl From<&HttpRequest> for HttpResponse {
             .protocol_version(&req.protocol_version)
             .connection(
                 req.get_header("Connection")
-                    .and_then(|v| match v {
-                        "keep-alive" => Some(Connection::KeepAlive),
-                        "close" => Some(Connection::Close),
-                        _ => Some(Connection::Close),
+                    .map(|v| match v {
+                        "keep-alive" => Connection::KeepAlive,
+                        "close" => Connection::Close,
+                        _ => Connection::Close,
                     })
                     .unwrap(),
             )
@@ -144,7 +144,7 @@ impl HttpResponse {
         }
         if self.get_header("Connection").is_none() {
             if let Some(v) = req.get_header("Connection") {
-                write!(stream, "Connection: {}\r\n", v)?;
+                write!(stream, "Connection: {v}\r\n")?;
             }
         }
         write!(stream, "\r\n")?;

@@ -1,5 +1,5 @@
 use std::{
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     io,
     path::{Path, PathBuf},
     str::FromStr,
@@ -7,7 +7,7 @@ use std::{
 
 use ee_http::{HttpRequest, HttpResponse};
 
-use crate::{ExeSenderSync, ExecuteResult, GetId};
+use crate::{ExeReceiverSync, ExeSenderSync, ExecuteResult, GetId};
 
 pub struct RemoveFileSync {
     path: OsString,
@@ -57,11 +57,8 @@ impl<T: io::Read + io::Write, W: io::Write> ExeSenderSync<T, W> for RemoveFileSy
     }
 }
 
-impl RemoveFileSync {
-    pub fn new(path: OsString) -> Self {
-        Self { path }
-    }
-    pub fn execute_on_server<T: io::Read + io::Write>(mut stream: T) -> io::Result<T> {
+impl<T: io::Read + io::Write> ExeReceiverSync<T> for RemoveFileSync {
+    fn execute_on_receiver(mut stream: T) -> io::Result<T> {
         let mut buf = [0; 8];
         stream.read_exact(&mut buf[0..2])?;
         let mut len = u16::from_be_bytes([buf[0], buf[1]]) as usize;
@@ -94,6 +91,12 @@ impl RemoveFileSync {
         stream.write_all(&ExecuteResult::Ok.to_be_bytes())?;
         stream.flush()?;
         Ok(stream)
+    }
+}
+
+impl RemoveFileSync {
+    pub fn new(path: OsString) -> Self {
+        Self { path }
     }
 }
 

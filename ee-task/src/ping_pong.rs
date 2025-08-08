@@ -2,7 +2,7 @@ use std::io;
 
 use ee_http::HttpRequest;
 
-use crate::{ExeSenderSync, ExecuteResult, GetId};
+use crate::{ExeReceiverSync, ExeSenderSync, ExecuteResult, GetId};
 
 pub struct Ping;
 
@@ -16,7 +16,7 @@ impl<T: io::Read + io::Write, W: io::Write> ExeSenderSync<T, W> for Ping {
     fn execute_on_sender(
         &self,
         mut stream: T,
-        req: &mut HttpRequest,
+        _req: &mut HttpRequest,
         _: W,
     ) -> std::io::Result<ExecuteResult> {
         let mut buf = [0; 4];
@@ -31,6 +31,18 @@ impl<T: io::Read + io::Write, W: io::Write> ExeSenderSync<T, W> for Ping {
     }
 }
 
+impl<T: io::Read + io::Write> ExeReceiverSync<T> for Ping {
+    fn execute_on_receiver(mut stream: T) -> io::Result<T> {
+        let mut buf = [0; 4];
+        stream.read_exact(&mut buf)?;
+        if *b"ping" == buf {
+            stream.write_all(b"pong")?;
+        }
+        stream.flush()?;
+        Ok(stream)
+    }
+}
+
 impl Default for Ping {
     fn default() -> Self {
         Self::new()
@@ -40,14 +52,5 @@ impl Default for Ping {
 impl Ping {
     pub fn new() -> Self {
         Self
-    }
-    pub fn execute_on_server<T: io::Read + io::Write>(mut stream: T) -> io::Result<T> {
-        let mut buf = [0; 4];
-        stream.read_exact(&mut buf)?;
-        if *b"ping" == buf {
-            stream.write_all(b"pong")?;
-        }
-        stream.flush()?;
-        Ok(stream)
     }
 }

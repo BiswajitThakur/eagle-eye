@@ -8,7 +8,6 @@ use std::{
 
 use ee_device::{ClientSync, Device, DeviceManager};
 use ee_http::{HttpRequest, HttpResponse, Method, Status};
-use ee_task::{ExecuteResult, file::RemoveFileSync};
 
 fn main() -> io::Result<()> {
     let client = ClientSync::new().device_connect_time_out(Duration::from_secs(3));
@@ -28,7 +27,7 @@ fn main() -> io::Result<()> {
                 Ok(true) => continue,
                 Ok(false) => break,
                 Err(err) => {
-                    eprintln!("{}\n", err);
+                    eprintln!("{err}\n");
                     break;
                 }
             }
@@ -39,7 +38,7 @@ fn main() -> io::Result<()> {
 
 fn my_print<T: std::fmt::Display>(v: T) {
     let mut stdout = std::io::stdout();
-    let _ = writeln!(stdout, "{}", v);
+    let _ = writeln!(stdout, "{v}");
     let _ = stdout.flush();
 }
 
@@ -106,7 +105,7 @@ fn get_http_request(reader: &mut BufReader<TcpStream>) -> io::Result<HttpRequest
     let mut iter = reader.lines();
     let first_line = iter.next().unwrap()?;
     let t: Vec<&str> = first_line.split_whitespace().collect();
-    let method = Method::from_str(t.get(0).unwrap()).unwrap();
+    let method = Method::from_str(t.first().unwrap()).unwrap();
     let path = *t.get(1).unwrap();
     let version = *t.get(2).unwrap();
     let mut headers = HashMap::new();

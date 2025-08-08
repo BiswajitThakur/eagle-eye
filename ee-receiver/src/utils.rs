@@ -1,9 +1,8 @@
 use std::{
     fs,
     io::{self, BufReader, BufWriter, Read, Write},
-    net::{SocketAddr, TcpStream},
+    net::SocketAddr,
     path::Path,
-    sync::{Arc, atomic::AtomicUsize},
 };
 
 use aes::cipher::{
@@ -11,8 +10,6 @@ use aes::cipher::{
 };
 use ee_stream::EStreamSync;
 use rand::Rng;
-
-use crate::receiver::EagleEyeServerSync;
 
 pub fn process_broadcast_data(
     key: [u8; 32],
@@ -31,9 +28,11 @@ pub fn process_broadcast_data(
     let mut iv = [0; 16];
     iv.copy_from_slice(&data[2..18]);
     let data = &mut data[18..];
+    // TODO: remove me
     println!("Before Decrypt: {data:?}");
     let pt = Aes256CbcDec::new(&key.into(), &iv.into());
     let data = pt.decrypt_padded_mut::<Pkcs7>(data).ok()?;
+    // TODO: remove me
     println!("After Decrypt: {data:?}");
     let mut got_id = [0u8; 16];
     got_id.copy_from_slice(&data[..16]);
@@ -47,30 +46,6 @@ pub fn process_broadcast_data(
     let mut sec = [0u8; 16];
     sec.copy_from_slice(secret);
     Some((addr, sec))
-}
-
-pub fn process<const N: usize>(
-    handler: Arc<EagleEyeServerSync<EStreamSync<N, TcpStream, TcpStream>>>,
-    thread_count: Arc<AtomicUsize>,
-    addr: SocketAddr,
-    secret: [u8; 16],
-) {
-    let stream = TcpStream::connect(addr);
-    if stream.is_err() {
-        thread_count.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-        return;
-    }
-    let mut stream = stream.unwrap();
-    if stream.write_all(&[0]).is_err() {
-        thread_count.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-        return;
-    }
-    if stream.write_all(&secret).is_err() {
-        thread_count.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-        return;
-    }
-    let _ = handler.handle_stream(stream.try_clone().unwrap(), stream);
-    thread_count.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
 }
 
 pub(crate) fn handle_auth_on_receiver_sync<const N: usize, R: io::Read, W: io::Write>(

@@ -69,7 +69,7 @@ impl HttpRequest {
         self
     }
     pub fn get_body(&self) -> Option<&[u8]> {
-        self.body.as_ref().map(|v| v.as_slice())
+        self.body.as_deref()
     }
 }
 

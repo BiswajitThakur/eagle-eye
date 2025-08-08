@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 ee-http = { path = "../ee-http" }
-
+serde = { workspace = true }
+serde_json = { workspace = true }
