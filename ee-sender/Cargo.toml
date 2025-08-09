@@ -13,4 +13,7 @@ base64 = { workspace = true }
 ctr = { workspace = true }
 rand = { workspace = true }
 cbc = { workspace = true }
-
+tokio = { workspace = true }
+hyper = { version = "1", features = ["server"] }
+http-body-util = "0.1"
+hyper-util = { version = "0.1", features = ["full"] }

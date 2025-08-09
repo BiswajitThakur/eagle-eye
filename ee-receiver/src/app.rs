@@ -1,7 +1,6 @@
 use std::{
     io::{self, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
-    path::PathBuf,
     sync::{Arc, atomic::AtomicUsize},
     time::Duration,
 };
@@ -12,12 +11,15 @@ use ee_task::{ExeReceiverSync, create_task_registery};
 
 use crate::utils::{handle_auth_on_receiver_sync, process_broadcast_data};
 
-create_task_registery!(
-    pub ReceiverTaskRegisterySync,
-    for<'a> fn(
+//  pub struct ReceiverTaskRegisterySync<const N: usize> {
+//      inner: Vec<(&'static str, $t)>,
+//  }
+create_task_registery! {
+    name: pub ReceiverTaskRegisterySync,
+    handler: for<'a> fn(
         EStreamSync<N, &'a TcpStream, &'a TcpStream>,
     ) -> io::Result<EStreamSync<N, &'a TcpStream, &'a TcpStream>>
-);
+}
 
 pub struct ReceiverConfigSync<'a, const N: usize> {
     id: u128,
@@ -27,7 +29,6 @@ pub struct ReceiverConfigSync<'a, const N: usize> {
     broadcast_data_prefix: &'static str,
     max_connection: usize,
     handler: ReceiverTaskRegisterySync<N>,
-    log: Option<PathBuf>,
 }
 
 impl<'a, const N: usize> Default for ReceiverConfigSync<'a, N> {
@@ -40,7 +41,6 @@ impl<'a, const N: usize> Default for ReceiverConfigSync<'a, N> {
             broadcast_data_prefix: "",
             max_connection: 4,
             handler: ReceiverTaskRegisterySync::default(),
-            log: None,
         }
     }
 }
@@ -52,10 +52,6 @@ impl<'a, const N: usize> ReceiverConfigSync<'a, N> {
     }
     pub fn key(mut self, key: [u8; 32]) -> Self {
         self.key = key;
-        self
-    }
-    pub fn set_log_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
-        self.log = Some(path.into());
         self
     }
     pub fn socket_addr(mut self, addr: SocketAddr) -> Self {
@@ -88,7 +84,6 @@ pub struct AppSync<'a, const N: usize> {
     broadcast_data_prefix: &'static str,
     max_connection: usize,
     count_connection: Arc<AtomicUsize>,
-    log: Option<PathBuf>,
     handler: Arc<ReceiverTaskRegisterySync<N>>,
 }
 
@@ -102,7 +97,6 @@ impl<'a, const N: usize> AppSync<'a, N> {
             broadcast_data_prefix,
             max_connection,
             handler,
-            log,
         } = config;
         Self {
             id,
@@ -112,7 +106,6 @@ impl<'a, const N: usize> AppSync<'a, N> {
             broadcast_data_prefix,
             max_connection,
             count_connection: Arc::new(AtomicUsize::new(0)),
-            log,
             handler: Arc::new(handler),
         }
     }

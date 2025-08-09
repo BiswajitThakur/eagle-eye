@@ -62,7 +62,7 @@ impl ExecuteResult {
 
 #[macro_export]
 macro_rules! create_task_registery {
-    ($v:vis $name:ident, $t:ty) => {
+    { name : $v:vis $name:ident, handler: $t:ty } => {
         /// A synchronous task registry that maps string IDs to handler functions.
         #[allow(clippy::type_complexity)]
         $v struct $name<const N: usize> {
