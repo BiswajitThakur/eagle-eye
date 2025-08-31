@@ -3,11 +3,11 @@ use std::io::{self, BufReader, BufWriter, Read, Write};
 use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 use ee_stream::EStreamSync;
 
-pub(crate) fn handle_auth_on_sender_sync<const N: usize, R: io::Read, W: io::Write>(
+pub(crate) fn handle_auth_on_sender_sync<'a>(
     key: [u8; 32],
-    reader: R,
-    writer: W,
-) -> io::Result<Option<EStreamSync<N, R, W>>> {
+    reader: impl io::Read + 'a,
+    writer: impl io::Write + 'a,
+) -> io::Result<Option<EStreamSync<'a>>> {
     let mut reader = BufReader::new(reader);
     let mut writer = BufWriter::new(writer);
     let mut iv = [0; 16];
@@ -23,7 +23,7 @@ pub(crate) fn handle_auth_on_sender_sync<const N: usize, R: io::Read, W: io::Wri
         return Ok(None);
     }
     cipher.seek(0);
-    let e_stream = EStreamSync::<N, R, W>::builder()
+    let e_stream = EStreamSync::builder()
         .cipher(cipher)
         .reader(reader)
         .writer(writer)

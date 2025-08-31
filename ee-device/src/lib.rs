@@ -257,14 +257,10 @@ impl ClientSync {
         self.device_connect_time_out = t;
         self
     }
-    pub fn connect<const N: usize>(
-        &self,
-        key: [u8; 32],
-        stream: TcpStream,
-    ) -> io::Result<TaskSenderSync<N, TcpStream, TcpStream>> {
+    pub fn connect(&self, key: [u8; 32], stream: TcpStream) -> io::Result<TaskSenderSync> {
         let stream1 = stream;
         let stream2 = stream1.try_clone()?;
-        let e_stream = match handle_auth_on_sender_sync::<N, _, _>(key, stream1, stream2)? {
+        let e_stream = match handle_auth_on_sender_sync(key, stream1, stream2)? {
             Some(v) => v,
             None => {
                 return Err(io::Error::new(
@@ -277,21 +273,21 @@ impl ClientSync {
     }
 }
 
-pub struct DeviceManager<const N: usize> {
+pub struct DeviceManager<'a> {
     // online devices
-    online: HashMap<u128, TaskSenderSync<N, TcpStream, TcpStream>>,
+    online: HashMap<u128, TaskSenderSync<'a>>,
     // u128: device id
     // [u8; 32]: password
     all: Vec<Device>,
 }
 
-impl<const N: usize> Default for DeviceManager<N> {
+impl Default for DeviceManager<'_> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const N: usize> DeviceManager<N> {
+impl DeviceManager<'_> {
     pub fn new() -> Self {
         Self {
             online: HashMap::new(),
@@ -299,10 +295,7 @@ impl<const N: usize> DeviceManager<N> {
         }
     }
     pub fn send<
-        T: for<'a, 'b> ExeSenderSync<
-                &'a mut TaskSenderSync<N, TcpStream, TcpStream>,
-                &'b mut BufWriter<TcpStream>,
-            >,
+        T: for<'a, 'b> ExeSenderSync<&'a mut TaskSenderSync<'static>, &'b mut BufWriter<TcpStream>>,
     >(
         &mut self,
         client: &ClientSync,
@@ -320,7 +313,7 @@ impl<const N: usize> DeviceManager<N> {
                     return Err(io::Error::other("Device is offline"));
                 }
                 let stream = v.unwrap();
-                let mut sender = client.connect::<N>(device.key, stream)?;
+                let mut sender = client.connect(device.key, stream)?;
                 let r = sender.send(task, req, http);
                 self.online.insert(*id, sender);
                 return r;
@@ -367,6 +360,9 @@ impl<const N: usize> DeviceManager<N> {
             self.all.push(device);
         }
     }
+    pub fn get_device(&self, id: &u128) -> Option<&Device> {
+        self.all.iter().find(|&v| &v.id == id)
+    }
     pub fn total_online(&self) -> usize {
         self.online.len()
     }
@@ -389,6 +385,15 @@ impl<const N: usize> DeviceManager<N> {
     pub fn get_online_device_id(&self) -> Vec<u128> {
         self.online.keys().copied().collect::<Vec<u128>>()
     }
+    pub fn get_online_device(&self) -> Vec<&Device> {
+        self.online
+            .iter()
+            .map(|v| v.0)
+            .map(|v| self.get_device(v))
+            .filter(|v| v.is_some())
+            .map(|v| v.unwrap())
+            .collect()
+    }
     pub fn scan(&mut self, client: &ClientSync) -> io::Result<()> {
         self.refresh_online_devices();
         let online_device_id = self.get_online_device_id();
@@ -399,7 +404,7 @@ impl<const N: usize> DeviceManager<N> {
             }
             let stream_option = device.connect_sync(Duration::from_secs(5))?;
             if let Some(stream) = stream_option {
-                let t = client.connect::<N>(device.key, stream)?;
+                let t = client.connect(device.key, stream)?;
                 self.online.insert(*device.get_id(), t);
             }
         }

@@ -15,20 +15,20 @@ Access storage, camera, execute cmd, install application on your other devices c
         |                  |
         v                  |
  +-----------------------------------------+
- |           eagle-eye-daemon              |
+ |               ee-sender                 |
  |    ( running on User 1's device )       |
  +-----------------------------------------+
         |                   ^
         | AES 256           |
         | encrypted         |  AES 256
-        | eagle-eye         |  encrypted
-        | request           |  eagle-eye
+        | request           |  encrypted
         |                   |  response
+        |                   |
         |                   |
         |                   |
         v                   |
  +-----------------------------------------+
- |           eagle-eye-daemon              |
+ |              ee-receiver                |
  |    ( running on User 2's device )       |
  +-----------------------------------------+
 ```

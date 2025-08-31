@@ -206,6 +206,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "rand",
+ "serde_json",
  "tokio",
 ]
 

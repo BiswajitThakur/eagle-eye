@@ -4,7 +4,7 @@ const BROADCAST_DATA_PREFIX: &str = ":eagle-eye:";
 
 const MAX_CONNECTIONS: usize = 3;
 
-pub fn config<'a, const N: usize>() -> ReceiverConfigSync<'a, N> {
+pub fn config() -> ReceiverConfigSync {
     let key: [u8; 32] = [33; 32];
     let id: u128 = 123;
 

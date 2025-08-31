@@ -1,4 +1,4 @@
-use std::{io, net::TcpStream};
+use std::io;
 
 use ee_http::HttpRequest;
 use ee_stream::EStreamSync;
@@ -20,10 +20,8 @@ pub trait ExeSenderSync<T: io::Read + io::Write, W: io::Write>: GetId {
     ) -> io::Result<ExecuteResult>;
 }
 
-pub trait ExeReceiverSync<const N: usize>: GetId {
-    fn execute_on_receiver<'a>(
-        stream: EStreamSync<N, &'a TcpStream, &'a TcpStream>,
-    ) -> io::Result<EStreamSync<N, &'a TcpStream, &'a TcpStream>>;
+pub trait ExeReceiverSync: GetId {
+    fn execute_on_receiver(stream: EStreamSync) -> io::Result<EStreamSync>;
 }
 
 #[repr(u8)]
@@ -65,17 +63,17 @@ macro_rules! create_task_registery {
     { name : $v:vis $name:ident, handler: $t:ty } => {
         /// A synchronous task registry that maps string IDs to handler functions.
         #[allow(clippy::type_complexity)]
-        $v struct $name<const N: usize> {
+        $v struct $name {
             inner: Vec<(&'static str, $t)>,
         }
 
-        impl<const N: usize> Default for $name<N> {
+        impl Default for $name {
             fn default() -> Self {
                 Self::new()
             }
         }
 
-        impl<const N: usize> $name<N> {
+        impl $name {
             /// Create a new empty [`TaskRegisterySync`].
             $v fn new() -> Self {
                 Self { inner: Vec::new() }

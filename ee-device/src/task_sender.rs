@@ -4,17 +4,17 @@ use ee_http::HttpRequest;
 use ee_stream::{EStreamSync, FlowControl};
 use ee_task::{ExeSenderSync, ExecuteResult};
 
-pub struct TaskSenderSync<const N: usize, R: io::Read, W: io::Write> {
-    stream: EStreamSync<N, R, W>,
+pub struct TaskSenderSync<'a> {
+    stream: EStreamSync<'a>,
 }
 
-impl<const N: usize, R: io::Read, W: io::Write> io::Read for TaskSenderSync<N, R, W> {
+impl io::Read for TaskSenderSync<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.stream.read(buf)
     }
 }
 
-impl<const N: usize, R: io::Read, W: io::Write> io::Write for TaskSenderSync<N, R, W> {
+impl io::Write for TaskSenderSync<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.stream.write(buf)
     }
@@ -23,13 +23,13 @@ impl<const N: usize, R: io::Read, W: io::Write> io::Write for TaskSenderSync<N, 
     }
 }
 
-impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
-    pub fn new(value: EStreamSync<N, R, W>) -> Self {
+impl<'a> TaskSenderSync<'a> {
+    pub fn new(value: EStreamSync<'a>) -> Self {
         Self { stream: value }
     }
 }
 
-impl<const N: usize, R: io::Read, W: io::Write> TaskSenderSync<N, R, W> {
+impl TaskSenderSync<'_> {
     pub fn send<U: io::Write, T: for<'a> ExeSenderSync<&'a mut Self, U>>(
         &mut self,
         task: T,

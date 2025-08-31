@@ -1,7 +1,8 @@
-//use tokio::io;
+/*
+
+use tokio::io;
 
 use std::{convert::Infallible, io, net::SocketAddr};
-
 use http_body_util::{BodyExt, Full};
 use hyper::{Request, Response, body::Bytes, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
@@ -29,11 +30,11 @@ async fn main() -> io::Result<()> {
 async fn hello(req: Request<hyper::body::Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
     Ok(Response::new(Full::new(Bytes::from("Hello, World!"))))
 }
-
-/*
+*/
 use std::{
     collections::HashMap,
     io::{self, BufRead, BufReader, BufWriter, Write},
+    mem::ManuallyDrop,
     net::{TcpListener, TcpStream},
     str::FromStr,
     time::Duration,
@@ -41,10 +42,11 @@ use std::{
 
 use ee_device::{ClientSync, Device, DeviceManager};
 use ee_http::{HttpRequest, HttpResponse, Method, Status};
+use ee_task::{GetId, file::RemoveFileSync, prelude::Ping};
 
 fn main() -> io::Result<()> {
     let client = ClientSync::new().device_connect_time_out(Duration::from_secs(3));
-    let mut my_devices = DeviceManager::<512>::new();
+    let mut my_devices = DeviceManager::new();
     my_devices.push_device(Device::new().id(123).key([33; 32]));
     my_devices.push_device(Device::new().id(3).key([0; 32]));
     my_devices.push_device(Device::new().id(10).key([17; 32]));
@@ -57,7 +59,7 @@ fn main() -> io::Result<()> {
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut writer = BufWriter::new(stream);
         loop {
-            match handle::<512>(&client, &mut reader, &mut writer, &mut my_devices) {
+            match handle(&client, &mut reader, &mut writer, &mut my_devices) {
                 Ok(true) => continue,
                 Ok(false) => break,
                 Err(err) => {
@@ -76,11 +78,11 @@ fn my_print<T: std::fmt::Display>(v: T) {
     let _ = stdout.flush();
 }
 
-fn handle<const N: usize>(
+fn handle(
     client: &ClientSync,
     reader: &mut BufReader<TcpStream>,
     writer: &mut BufWriter<TcpStream>,
-    manager: &mut DeviceManager<N>,
+    manager: &mut DeviceManager,
 ) -> io::Result<bool> {
     let mut req = get_http_request(reader)?;
     my_print(format!("{:?}", &req));
@@ -88,27 +90,21 @@ fn handle<const N: usize>(
         "/" => HttpResponse::new().send_file(writer, "web/index.html")?,
         "/api/scan-devices" => {
             manager.scan(client)?;
-            HttpResponse::new().send_json_str(
-                writer,
-                format!(
-                    "{{\"online\":{},\"total\":{}}}",
-                    manager.total_online(),
-                    manager.total_device()
-                ),
-            )?;
+            let online = manager
+                .get_online_device()
+                .iter()
+                .map(|&v| {
+                    let mut h = HashMap::new();
+                    h.insert("user", v.get_user().to_owned());
+                    h.insert("os", v.get_os().to_owned());
+                    h.insert("id", v.get_id().to_string());
+                    h
+                })
+                .collect::<Vec<HashMap<&'static str, String>>>();
+            HttpResponse::new().send_json_str(writer, serde_json::to_string(&online).unwrap())?;
         }
-        "/err" => {}
         "/api" | "/api/" => {
-            handle_api(client, &mut req, writer)?;
-            //let id = v.strip_prefix("/send/").unwrap();
-            /*
-            let _ = manager.send(
-                client,
-                &123,
-                &mut req,
-                writer,
-                RemoveFile::new("hello".into()),
-            );*/
+            handle_api(client, &mut req, writer, manager)?;
         }
         _ => HttpResponse::default()
             .status(Status::NotFound)
@@ -175,6 +171,29 @@ fn handle_api(
     client: &ClientSync,
     req: &mut HttpRequest,
     writer: &mut BufWriter<TcpStream>,
+    manager: &mut DeviceManager,
 ) -> io::Result<()> {
+    let task_id = req.get_header("TaskId");
+    if task_id.is_none() {
+        return HttpResponse::new().send_str(writer, "TaskId not found.");
+    }
+    let device_id = match req.get_header("Id") {
+        Some(id) => id.parse::<u128>().unwrap(),
+        None => return HttpResponse::new().send_str(writer, "Id not found."),
+    };
+    match task_id.unwrap() {
+        v if v == Ping::id() => {
+            if manager
+                .send(client, &device_id, req, writer, Ping::new())
+                .is_ok()
+            {
+                return HttpResponse::new().send_str(writer, "pong");
+            } else {
+                return HttpResponse::new().send_str(writer, "Device is not online.");
+            }
+        }
+        v if v == RemoveFileSync::id() => {}
+        _ => {}
+    }
     todo!()
-}*/
+}

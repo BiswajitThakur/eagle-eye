@@ -48,11 +48,11 @@ pub fn process_broadcast_data(
     Some((addr, sec))
 }
 
-pub(crate) fn handle_auth_on_receiver_sync<const N: usize, R: io::Read, W: io::Write>(
+pub(crate) fn handle_auth_on_receiver_sync<'a>(
     key: [u8; 32],
-    reader: R,
-    writer: W,
-) -> io::Result<Option<EStreamSync<N, R, W>>> {
+    reader: impl io::Read + 'a,
+    writer: impl io::Write + 'a,
+) -> io::Result<Option<EStreamSync<'a>>> {
     let mut reader = BufReader::new(reader);
     let mut writer = BufWriter::new(writer);
     let iv = rand::rng().random::<[u8; 16]>();
@@ -72,7 +72,7 @@ pub(crate) fn handle_auth_on_receiver_sync<const N: usize, R: io::Read, W: io::W
     writer.write_all(b":0:")?;
     writer.flush()?;
     cipher.seek(0);
-    let e_stream = EStreamSync::<N, R, W>::builder()
+    let e_stream = EStreamSync::builder()
         .cipher(cipher)
         .reader(reader)
         .writer(writer)
