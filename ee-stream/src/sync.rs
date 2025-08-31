@@ -2,103 +2,94 @@ use std::io;
 
 use aes::cipher::StreamCipher;
 
-pub struct EStreamSync<'a> {
+use crate::buffer::BufReadWriter;
+
+pub struct EStreamSync<T: io::Read + io::Write> {
+    inner: BufReadWriter<T>,
     read_cipher: ctr::Ctr64LE<aes::Aes256>,
     write_cipher: ctr::Ctr64LE<aes::Aes256>,
     write_buff: Box<[u8]>,
-    reader: Box<dyn io::Read + 'a>,
-    writer: Box<dyn io::Write + 'a>,
 }
 
 // TODO: remove me
 #[cfg(debug_assertions)]
-impl Drop for EStreamSync<'_> {
+impl<T: io::Read + io::Write> Drop for EStreamSync<T> {
     fn drop(&mut self) {
         println!("....EStream Droped......");
     }
 }
 
-impl io::Read for EStreamSync<'_> {
+impl<T: io::Read + io::Write> io::Read for EStreamSync<T> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.reader.read(buf)?;
+        let n = self.inner.read(buf)?;
         self.read_cipher.apply_keystream(&mut buf[0..n]);
         Ok(n)
     }
 }
 
-impl io::Write for EStreamSync<'_> {
+impl<T: io::Read + io::Write> io::Write for EStreamSync<T> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        for chunk in buf.chunks(self.write_buff.len()) {
-            self.write_cipher
-                .apply_keystream_b2b(chunk, &mut self.write_buff[0..chunk.len()])
-                .unwrap();
-            self.writer.write(&self.write_buff[0..chunk.len()])?;
-        }
-        Ok(buf.len())
+        let r = std::cmp::min(buf.len(), self.write_buff.len());
+        let src = unsafe { buf.get_unchecked(0..r) };
+        let dest = unsafe { self.write_buff.get_unchecked_mut(0..r) };
+        self.write_cipher.apply_keystream_b2b(src, dest).unwrap();
+        self.inner.write_all(dest)?;
+        Ok(r)
     }
     #[inline]
     fn flush(&mut self) -> io::Result<()> {
-        self.writer.flush()
+        self.inner.flush()
     }
 }
 
-/*
-impl io::BufRead for EStreamSync<'_> {
+impl<T: io::Read + io::Write> io::BufRead for EStreamSync<T> {
     #[inline]
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        self.reader.fill_buf()
+        self.inner.fill_buf()
     }
     #[inline]
     fn consume(&mut self, amt: usize) {
-        self.reader.consume(amt);
+        self.inner.consume(amt);
     }
 }
-*/
 
-impl EStreamSync<'_> {
+impl<T: io::Read + io::Write> EStreamSync<T> {
     #[inline]
-    pub fn builder<'a>() -> EStreamBuilderSync<'a> {
+    pub fn builder() -> EStreamBuilderSync<T> {
         EStreamBuilderSync {
             cipher: None,
             buffer_size: std::num::NonZero::new(8 * 1024),
-            reader: None,
-            writer: None,
+            read_writer: None,
         }
     }
 }
 
-pub struct EStreamBuilderSync<'a> {
+pub struct EStreamBuilderSync<T: io::Read + io::Write> {
     cipher: Option<ctr::Ctr64LE<aes::Aes256>>,
     buffer_size: Option<std::num::NonZero<usize>>,
-    reader: Option<Box<dyn io::Read + 'a>>,
-    writer: Option<Box<dyn io::Write + 'a>>,
+    read_writer: Option<T>,
 }
 
-impl<'a> EStreamBuilderSync<'a> {
+impl<T: io::Read + io::Write> EStreamBuilderSync<T> {
     pub fn cipher(mut self, cipher: ctr::Ctr64LE<aes::Aes256>) -> Self {
         self.cipher = Some(cipher);
         self
     }
-    pub fn reader(mut self, reader: impl io::Read + 'a) -> Self {
-        self.reader = Some(Box::new(reader));
-        self
-    }
-    pub fn writer(mut self, writer: impl io::Write + 'a) -> Self {
-        self.writer = Some(Box::new(writer));
+    pub fn read_writer(mut self, v: T) -> Self {
+        self.read_writer = Some(v);
         self
     }
     pub fn buffer_size(mut self, size: usize) -> Self {
         self.buffer_size = std::num::NonZero::new(size);
         self
     }
-    pub fn build(self) -> Option<EStreamSync<'a>> {
+    pub fn build(self) -> Option<EStreamSync<T>> {
         let Self {
             cipher,
             buffer_size,
-            reader,
-            writer,
+            read_writer,
         } = self;
         let buffer_size = buffer_size?;
         let v = Box::<[u8]>::new_uninit_slice(buffer_size.get());
@@ -108,8 +99,7 @@ impl<'a> EStreamBuilderSync<'a> {
             read_cipher: cipher.clone(),
             write_cipher: cipher,
             write_buff: buffer,
-            reader: reader?,
-            writer: writer?,
+            inner: BufReadWriter::new(read_writer?),
         })
     }
 }

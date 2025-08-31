@@ -1,4 +1,4 @@
-mod buffer;
+pub mod buffer;
 mod sync;
 
 pub use sync::{EStreamBuilderSync, EStreamSync};
