@@ -1,5 +1,53 @@
 use std::io;
 
+pub struct BufReadWriter<T> {
+    read_buf: ReaderBuff,
+    write_buf: WriterBuff,
+    inner: T,
+}
+
+impl<T> BufReadWriter<T> {
+    pub fn new(inner: T) -> Self {
+        Self {
+            read_buf: ReaderBuff::new(),
+            write_buf: WriterBuff::new(),
+            inner,
+        }
+    }
+    pub fn with_read_write_capacity(r: usize, w: usize, inner: T) -> Self {
+        Self {
+            read_buf: ReaderBuff::with_capacity(r),
+            write_buf: WriterBuff::with_capacity(w),
+            inner,
+        }
+    }
+    pub fn with_read_capacity(cap: usize, inner: T) -> Self {
+        Self {
+            read_buf: ReaderBuff::with_capacity(cap),
+            write_buf: WriterBuff::new(),
+            inner,
+        }
+    }
+    pub fn with_write_capacity(cap: usize, inner: T) -> Self {
+        Self {
+            read_buf: ReaderBuff::new(),
+            write_buf: WriterBuff::with_capacity(cap),
+            inner,
+        }
+    }
+    pub fn read_buffer(&self) -> &[u8] {
+        self.read_buf.buffer()
+    }
+    pub fn read_buffer_mut(&mut self) -> &mut [u8] {
+        self.read_buf.buffer_mut()
+    }
+    pub fn write_buffer(&self) -> &[u8] {
+        self.write_buf.buffer()
+    }
+    pub fn write_buffer_mut(&mut self) -> &mut [u8] {
+        self.write_buf.buffer_mut()
+    }
+}
 struct ReaderBuff {
     buf: Box<[u8]>,
     pos: usize,
@@ -7,10 +55,13 @@ struct ReaderBuff {
 }
 
 impl ReaderBuff {
+    #[inline]
     fn new() -> Self {
         Self::with_capacity(8 * 1024)
     }
+    #[inline]
     fn with_capacity(size: usize) -> Self {
+        assert!(size != 0, "capacity can not be zero");
         let v = Box::<[u8]>::new_uninit_slice(size);
         let buf = unsafe { v.assume_init() };
         Self {
@@ -19,6 +70,7 @@ impl ReaderBuff {
             filled: 0,
         }
     }
+    #[inline]
     fn fill_buf(&mut self, mut reader: impl io::Read) -> io::Result<&[u8]> {
         if self.pos >= self.filled {
             self.pos = 0;
@@ -26,6 +78,7 @@ impl ReaderBuff {
         }
         unsafe { Ok(self.buf.get_unchecked(self.pos..self.filled)) }
     }
+    #[inline]
     fn consume(&mut self, amount: usize) {
         self.pos = std::cmp::min(self.pos + amount, self.filled);
     }
@@ -34,9 +87,11 @@ impl ReaderBuff {
         self.pos = 0;
         self.filled = 0;
     }
+    #[inline]
     fn buffer(&self) -> &[u8] {
         unsafe { self.buf.get_unchecked(self.pos..self.filled) }
     }
+    #[inline]
     fn buffer_mut(&mut self) -> &mut [u8] {
         unsafe { self.buf.get_unchecked_mut(self.pos..self.filled) }
     }
@@ -47,7 +102,11 @@ struct WriterBuff {
 }
 
 impl WriterBuff {
+    fn new() -> Self {
+        Self::with_capacity(8 * 1024)
+    }
     fn with_capacity(cap: usize) -> Self {
+        assert!(cap != 0, "capacity can not be zero");
         Self {
             buf: Vec::with_capacity(cap),
         }
@@ -138,8 +197,7 @@ impl WriterBuff {
         }
 
         if buf.len() >= self.buf.capacity() {
-            let r = writer.write(buf);
-            r
+            writer.write(buf)
         } else {
             unsafe {
                 self.write_to_buffer_unchecked(buf);
@@ -153,8 +211,7 @@ impl WriterBuff {
             self.flush_buf(&mut writer)?;
         }
         if buf.len() >= self.buf.capacity() {
-            let r = writer.write_all(buf);
-            r
+            writer.write_all(buf)
         } else {
             unsafe {
                 self.write_to_buffer_unchecked(buf);
@@ -162,37 +219,6 @@ impl WriterBuff {
 
             Ok(())
         }
-    }
-}
-
-pub struct BufReadWriter<T> {
-    read_buf: ReaderBuff,
-    write_buf: WriterBuff,
-    inner: T,
-}
-
-impl<T: io::Read + io::Write> BufReadWriter<T> {
-    pub fn new(inner: T) -> Self {
-        Self::with_read_write_capacity(inner, 8 * 1024, 8 * 1024)
-    }
-    pub fn with_read_write_capacity(inner: T, r: usize, w: usize) -> Self {
-        Self {
-            read_buf: ReaderBuff::with_capacity(r),
-            write_buf: WriterBuff::with_capacity(w),
-            inner,
-        }
-    }
-    pub fn read_buffer(&self) -> &[u8] {
-        self.read_buf.buffer()
-    }
-    pub fn read_buffer_mut(&mut self) -> &mut [u8] {
-        self.read_buf.buffer_mut()
-    }
-    pub fn write_buffer(&self) -> &[u8] {
-        self.write_buf.buffer()
-    }
-    pub fn write_buffer_mut(&mut self) -> &mut [u8] {
-        self.write_buf.buffer_mut()
     }
 }
 
@@ -245,5 +271,104 @@ impl<T: io::Write> io::Write for BufReadWriter<T> {
         self.write_buf
             .flush_buf(&mut self.inner)
             .and_then(|()| self.inner.flush())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Cursor, Read};
+
+    use crate::buffer::BufReadWriter;
+
+    #[test]
+    fn test_buf_read_writer_read_1() {
+        let mut buf = [0; 2];
+        let mut reader = BufReadWriter::with_read_capacity(8, Cursor::new("hello world.a.b.z"));
+        assert_eq!(reader.read_buffer(), &[]);
+
+        assert_eq!(reader.read(&mut buf[0..1]).unwrap(), 1);
+        assert_eq!(buf[0], b'h');
+        assert_eq!(reader.read_buffer(), b"ello wo");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 2);
+        assert_eq!(&buf, b"el");
+        assert_eq!(reader.read_buffer(), b"lo wo");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 2);
+        assert_eq!(&buf, b"lo");
+        assert_eq!(reader.read_buffer(), b" wo");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 2);
+        assert_eq!(&buf, b" w");
+        assert_eq!(reader.read_buffer(), b"o");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 1);
+        assert_eq!(&buf[0..1], &*b"o");
+        assert_eq!(reader.read_buffer(), b"");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 2);
+        assert_eq!(&buf, b"rl");
+        assert_eq!(reader.read_buffer(), b"d.a.b.");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 2);
+        assert_eq!(&buf, b"d.");
+        assert_eq!(reader.read_buffer(), b"a.b.");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 2);
+        assert_eq!(&buf, b"a.");
+        assert_eq!(reader.read_buffer(), b"b.");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 2);
+        assert_eq!(&buf, b"b.");
+        assert_eq!(reader.read_buffer(), b"");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 1);
+        assert_eq!(&buf[0..1], &*b"z");
+        assert_eq!(reader.read_buffer(), b"");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 0);
+        assert_eq!(reader.read_buffer(), b"");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 0);
+        assert_eq!(reader.read_buffer(), b"");
+    }
+
+    #[test]
+    fn test_buf_read_writer_read_2() {
+        let mut buf = [0; 9];
+        let mut reader = BufReadWriter::with_read_capacity(8, Cursor::new("hello world"));
+        assert_eq!(reader.read_buffer(), &[]);
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 9);
+        assert_eq!(&buf, b"hello wor");
+        assert_eq!(reader.read_buffer(), &[]);
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 2);
+        assert_eq!(&buf[0..2], b"ld");
+        assert_eq!(reader.read_buffer(), &[]);
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 0);
+        assert_eq!(reader.read_buffer(), &[]);
+    }
+
+    #[test]
+    fn test_buf_read_writer_read_3() {
+        let mut buf = [0; 9];
+        let mut reader = BufReadWriter::with_read_capacity(8, Cursor::new("hello world"));
+
+        assert_eq!(reader.read(&mut buf[0..1]).unwrap(), 1);
+        assert_eq!(buf[0], b'h');
+        assert_eq!(reader.read_buffer(), b"ello wo");
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 7);
+        assert_eq!(&buf[0..7], b"ello wo");
+        assert_eq!(reader.read_buffer(), &[]);
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 3);
+        assert_eq!(&buf[0..3], b"rld");
+        assert_eq!(reader.read_buffer(), &[]);
+
+        assert_eq!(reader.read(&mut buf).unwrap(), 0);
+        assert_eq!(reader.read_buffer(), &[]);
     }
 }

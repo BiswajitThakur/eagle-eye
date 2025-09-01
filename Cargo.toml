@@ -2,13 +2,13 @@
 resolver = "3"
 members = [
     "ee-broadcaster",
-    "ee-sender",
-    "ee-receiver",
-    "ee-task",
-    "ee-device",
-    "ee-http",
+  #"ee-sender",
+  # "ee-receiver",
+  # "ee-task",
+  # "ee-device",
+  # "ee-http",
     "ee-stream",
-    "ee-proto"
+  #  "ee-proto"
 ]
 
 [workspace.dependencies]
