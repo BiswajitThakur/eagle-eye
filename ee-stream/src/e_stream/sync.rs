@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, num::NonZero};
 
 use aes::cipher::StreamCipher;
 
@@ -60,16 +60,18 @@ impl<T: io::Read + io::Write> EStreamSync<T> {
     pub fn builder() -> EStreamBuilderSync<T> {
         EStreamBuilderSync {
             cipher: None,
-            buffer_size: std::num::NonZero::new(8 * 1024),
-            read_writer: None,
+            read_buf_size: NonZero::new(8 * 1024),
+            write_buf_size: NonZero::new(8 * 1024),
+            inner: None,
         }
     }
 }
 
 pub struct EStreamBuilderSync<T: io::Read + io::Write> {
     cipher: Option<ctr::Ctr64LE<aes::Aes256>>,
-    buffer_size: Option<std::num::NonZero<usize>>,
-    read_writer: Option<T>,
+    read_buf_size: Option<NonZero<usize>>,
+    write_buf_size: Option<NonZero<usize>>,
+    inner: Option<T>,
 }
 
 impl<T: io::Read + io::Write> EStreamBuilderSync<T> {
@@ -77,29 +79,39 @@ impl<T: io::Read + io::Write> EStreamBuilderSync<T> {
         self.cipher = Some(cipher);
         self
     }
-    pub fn read_writer(mut self, v: T) -> Self {
-        self.read_writer = Some(v);
+    pub fn inner(mut self, v: T) -> Self {
+        self.inner = Some(v);
         self
     }
-    pub fn buffer_size(mut self, size: usize) -> Self {
-        self.buffer_size = std::num::NonZero::new(size);
+    pub fn read_buffer_size(mut self, size: usize) -> Self {
+        self.read_buf_size = NonZero::new(size);
+        self
+    }
+    pub fn write_buffer_size(mut self, size: usize) -> Self {
+        self.write_buf_size = NonZero::new(size);
         self
     }
     pub fn build(self) -> Option<EStreamSync<T>> {
         let Self {
             cipher,
-            buffer_size,
-            read_writer,
+            read_buf_size,
+            write_buf_size,
+            inner,
         } = self;
-        let buffer_size = buffer_size?;
-        let v = Box::<[u8]>::new_uninit_slice(buffer_size.get());
+        let read_buffer_size = read_buf_size?;
+        let write_buffer_size = write_buf_size?;
+        let v = Box::<[u8]>::new_uninit_slice(write_buffer_size.get());
         let buffer = unsafe { v.assume_init() };
         let cipher = cipher?;
         Some(EStreamSync {
+            inner: BufReadWriter::with_read_write_capacity(
+                read_buffer_size.get(),
+                write_buffer_size.get(),
+                inner?,
+            ),
             read_cipher: cipher.clone(),
             write_cipher: cipher,
             write_buff: buffer,
-            inner: BufReadWriter::new(read_writer?),
         })
     }
 }
