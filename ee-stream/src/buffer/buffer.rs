@@ -71,10 +71,15 @@ impl<T: io::Read + io::Write> io::Read for BufReadWriter<T> {
             self.read_buf.discard_buffer();
             return self.inner.read(buf);
         }
-        let mut rem = std::io::BufRead::fill_buf(self)?;
-        let nread = rem.read(buf)?;
-        std::io::BufRead::consume(self, nread);
-        Ok(nread)
+        let rem = std::io::BufRead::fill_buf(self)?;
+        let amt = std::cmp::min(rem.len(), buf.len());
+        let src = rem.as_ptr();
+        let dst = buf.as_mut_ptr();
+        unsafe {
+            std::ptr::copy_nonoverlapping(src, dst, amt);
+        }
+        std::io::BufRead::consume(self, amt);
+        Ok(amt)
     }
 }
 

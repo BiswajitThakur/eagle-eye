@@ -62,6 +62,14 @@ name = "ee-broadcaster"
 version = "0.1.0"
 
 [[package]]
+name = "ee-proto"
+version = "0.1.0"
+
+[[package]]
+name = "ee-storage"
+version = "0.1.0"
+
+[[package]]
 name = "ee-stream"
 version = "0.1.0"
 dependencies = [

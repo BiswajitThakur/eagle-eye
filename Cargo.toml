@@ -8,8 +8,8 @@ members = [
   # "ee-device",
   # "ee-http",
     "ee-stream",
-  #  "ee-proto"
-]
+    "ee-proto"
+, "ee-storage"]
 
 [workspace.dependencies]
 aes = "0.8.4"
