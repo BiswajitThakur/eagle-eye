@@ -1,3 +1,4 @@
+/*
 use std::{
     fs,
     io::{self, BufReader, BufWriter, Read, Write},
@@ -94,4 +95,4 @@ pub(crate) fn write_log_sync<P: AsRef<Path>>(path: Option<P>, err: io::Error) {
         return;
     }
     let _ = writeln!(w, "{err}");
-}
+}*/

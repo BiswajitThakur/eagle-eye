@@ -1,3 +1,4 @@
+/*
 use crate::app::ReceiverConfigSync;
 
 const BROADCAST_DATA_PREFIX: &str = ":eagle-eye:";
@@ -13,4 +14,4 @@ pub fn config() -> ReceiverConfigSync {
         .max_connection(MAX_CONNECTIONS)
         .key(key)
         .id(id)
-}
+}*/

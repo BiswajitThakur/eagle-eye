@@ -1,3 +1,4 @@
+/*
 use std::{
     io::{self, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
@@ -200,4 +201,4 @@ impl AppSync {
         }
         Ok(())
     }
-}
+}*/

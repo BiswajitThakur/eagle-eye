@@ -34,9 +34,6 @@ impl Value {
         let val = unsafe { &*(self.ptr as *const T) };
         Some(val)
     }
-    pub unsafe fn get_unchecked<T>(&self) -> &T {
-        unsafe { &*(self.ptr as *const T) }
-    }
     pub fn get_mut<T: 'static>(&mut self) -> Option<&mut T> {
         if self.id != TypeId::of::<T>() {
             return None;
@@ -44,7 +41,11 @@ impl Value {
         let val = unsafe { &mut *(self.ptr as *mut T) };
         Some(val)
     }
-    pub unsafe fn get_mut_unchecked<T>(&self) -> &T {
+    pub unsafe fn get_unchecked<T>(&self) -> &T {
+        unsafe { &*(self.ptr as *const T) }
+    }
+
+    pub unsafe fn get_mut_unchecked<T>(&self) -> &mut T {
         unsafe { &mut *(self.ptr as *mut T) }
     }
     pub fn as_ptr(&self) -> *const u8 {

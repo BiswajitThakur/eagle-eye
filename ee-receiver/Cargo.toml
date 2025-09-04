@@ -5,8 +5,9 @@ edition = "2024"
 
 [dependencies]
 ee-broadcaster = { path = "../ee-broadcaster" }
-ee-task = { path = "../ee-task"}
+#ee-task = { path = "../ee-task"}
 ee-stream = { path = "../ee-stream" }
+ee-app = { path = "../ee-app" }
 aes = { workspace = true }
 cbc = { workspace = true }
 ctr = { workspace = true }

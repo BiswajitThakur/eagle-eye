@@ -3,13 +3,13 @@ resolver = "3"
 members = [
     "ee-broadcaster",
   #"ee-sender",
-  # "ee-receiver",
+   "ee-receiver",
   # "ee-task",
   # "ee-device",
   # "ee-http",
     "ee-stream",
     "ee-proto"
-, "ee-storage"]
+, "ee-app"]
 
 [workspace.dependencies]
 aes = "0.8.4"

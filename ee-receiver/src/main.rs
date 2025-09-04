@@ -3,21 +3,28 @@ mod config;
 mod proto;
 mod utils;
 
-use std::{io, time::Duration};
+use std::{io, net::TcpStream, time::Duration};
 
-use ee_task::prelude::*;
+use ee_app::{app::receiver_app::ReceiverApp, app_data::MyStorage};
+use ee_stream::buffer::BufReadWriter;
 
-use crate::{app::AppSync, config::config, my_app::ThreadCounter};
+//use ee_task::prelude::*;
+
+//use crate::{app::AppSync, config::config, my_app::ThreadCounter};
+//
+
+struct MyApp {}
 
 fn main() -> io::Result<()> {
-    let mut config = config();
-    config
-        .register::<RemoveFileSync>() // sender can remove file of receiver
-        .register::<Ping>(); // sender can check, receiver is online or ofline.
+    /*
+        let mut config = config();
+        config
+            .register::<RemoveFileSync>() // sender can remove file of receiver
+            .register::<Ping>(); // sender can check, receiver is online or ofline.
 
-    let app = AppSync::new(config);
-    app.run()?;
-
+        let app = AppSync::new(config);
+        app.run()?;
+    */
     /*
     let v = ThreadCounter::new(5);
     v.span(|| {
@@ -61,6 +68,7 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
+/*
 pub mod my_app {
     use std::{
         io::{self},
@@ -140,4 +148,4 @@ pub mod my_app {
             }
         }
     }
-}
+}*/
