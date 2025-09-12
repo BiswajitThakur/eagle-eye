@@ -3,10 +3,18 @@ mod config;
 mod proto;
 mod utils;
 
-use std::{io, net::TcpStream, time::Duration};
+use std::{
+    io,
+    net::{SocketAddr, TcpStream},
+    time::Duration,
+};
 
-use ee_app::{app::receiver_app::ReceiverApp, app_data::MyStorage};
-use ee_stream::buffer::BufReadWriter;
+use ee_app::{
+    app::receiver_app::{ReceiverApp, ReceiverAppServer},
+    app_data::MyStorage,
+};
+use ee_broadcaster::ReceiverInfo;
+use ee_stream::{buffer::BufReadWriter, e_stream::EStreamSync};
 
 //use ee_task::prelude::*;
 
@@ -25,127 +33,73 @@ fn main() -> io::Result<()> {
         let app = AppSync::new(config);
         app.run()?;
     */
-    /*
-    let v = ThreadCounter::new(5);
-    v.span(|| {
-        println!("thread started...");
-        std::thread::sleep(Duration::from_secs(15));
-        println!("thread closed...");
-    });
-    v.span(|| {
-        println!("thread started...");
-        std::thread::sleep(Duration::from_secs(15));
-        println!("thread closed...");
-    });
-    v.span(|| {
-        println!("thread started...");
-        std::thread::sleep(Duration::from_secs(15));
-        println!("thread closed...");
-    });
-    std::thread::sleep(Duration::from_secs(100));
-    */
-    /*
-
-    let config = Config::new()
-        .id(id)
-        .password(passwd)
-        .max_buf_size(64*1024)
-        .max_broadcast_data_len(2*1024);
-
-    let app = App::new(config);
-    app.register::<RmFile>();
-    app.register::<Ping>();
-
-    proto::v2::run(app, |app: &App| {
-        let a1 = app.exec(proto::recv_data::v1);
-        let a2 = app.exec2(proto::proc_data::v1, a1);
-        let a3 = app.exec2(proto::connect::v1, a2);
-        let a4 = app.exec(proto::handle_conn::v1, a3);
-        a4
-    });
-
-         * */
+    let server = ReceiverAppServer::new(move || MyApp {})
+        .app_name("eagle-eye")
+        .version((1, 0, 0))
+        .app_data(AppData {})
+        .handler(Handler {})
+        .max_connection(8);
+    server.run();
     Ok(())
 }
 
-/*
-pub mod my_app {
-    use std::{
-        io::{self},
-        net::{SocketAddr, TcpStream},
-        sync::{Arc, atomic::AtomicUsize},
-        thread::JoinHandle,
-    };
+#[derive(Default)]
+struct AppData {}
+#[derive(Default)]
+struct Handler {}
 
-    use ee_broadcaster::ReceiverInfo;
-
-    use crate::utils::process_broadcast_data;
-
-    struct Config {
-        id: u128,
-        password: [u8; 32],
-        max_broadcast_data_len: usize,
-    }
-    struct App {
-        config: Config,
-    }
-
-    trait MyApp {
-        fn get_id(&self) -> &u128;
-        fn get_password(&self) -> &[u8; 32];
-        fn get_prefix(&self) -> &str;
-        fn get_max_broadcast_data_len(&self) -> usize;
-        fn get_max_connection(&self) -> usize;
-        fn get_handler(
-            &self,
-            value: &str,
-        ) -> Option<impl FnOnce(Box<dyn io::Read>, Box<dyn io::Write>) -> io::Result<()>>;
-    }
-
-    fn run<T: MyApp>(app: T, f: impl FnOnce(TcpStream) -> io::Result<()>) -> io::Result<()> {
-        let pass = *app.get_password();
-        let id = *app.get_id();
-        let counter = ThreadCounter::new(app.get_max_connection());
-        let mut recv = ReceiverInfo::builder()
-            .prefix(app.get_prefix())
-            .buffer_size(8 * 1024)
-            .socket_addr(SocketAddr::from(([255, 255, 255, 255], 6923)))
-            .build()?;
-        if let Ok(Some((add, buff))) = recv.next() {
-            if let Some((addr, sec)) = process_broadcast_data(pass, id, add, buff) {};
-        }
-        Ok(())
-    }
-
-    pub struct ThreadCounter {
-        max: usize,
-        curr: Arc<AtomicUsize>,
-    }
-
-    impl ThreadCounter {
-        pub fn new(v: usize) -> Self {
-            Self {
-                max: v,
-                curr: Arc::new(AtomicUsize::new(0)),
+impl ReceiverApp for MyApp {
+    type Stream = TcpStream;
+    type BufStream = BufReadWriter<TcpStream>;
+    type EStream = EStreamSync<Self::BufStream>;
+    type AppData = AppData;
+    type ConnectionHandler = Handler;
+    fn get_stream(&self) -> impl FnMut() -> Option<Self::Stream> {
+        let mut receiver = ReceiverInfo::builder()
+            .prefix("eagle-eye")
+            .buffer_size(4096)
+            .socket_addr(SocketAddr::from(([255, 255, 255, 255], 7766)))
+            .build()
+            .unwrap();
+        let v = move || {
+            loop {
+                if let Ok(Some((a, _))) = receiver.next() {
+                    let v = TcpStream::connect(a);
+                    if v.is_err() {
+                        continue;
+                    }
+                    return v.ok();
+                } else {
+                    return None;
+                }
             }
-        }
-        pub fn span<F, T>(&self, f: F) -> Option<JoinHandle<T>>
-        where
-            F: FnOnce() -> T,
-            F: Send + 'static,
-            T: Send + 'static,
-        {
-            if self.curr.load(std::sync::atomic::Ordering::SeqCst) < self.max {
-                self.curr.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let count = self.curr.clone();
-                Some(std::thread::spawn(move || {
-                    let v = f();
-                    count.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-                    v
-                }))
-            } else {
-                None
-            }
-        }
+        };
+        v
     }
-}*/
+    fn accept_version(&self) -> impl Fn((u32, u32, u32)) -> bool {
+        |(_, _, _)| true
+    }
+    fn to_buffer_stream(&self, stream: Self::Stream) -> Self::BufStream {
+        BufReadWriter::with_capacity(8 * 1024, stream)
+    }
+    fn handle_auth(&self, stream: &mut Self::BufStream) -> io::Result<bool> {
+        todo!()
+    }
+    fn log_error<E: std::error::Error>(&self, _error: E) {
+        todo!()
+    }
+    fn encrypt_connection(
+        &self,
+        data: &std::sync::Arc<std::sync::Mutex<Self::AppData>>,
+        stream: Self::BufStream,
+    ) -> io::Result<Self::EStream> {
+        todo!()
+    }
+    fn handle_connection(
+        data: std::sync::Arc<std::sync::Mutex<Self::AppData>>,
+        handler: std::sync::Arc<Self::ConnectionHandler>,
+        stream: Self::EStream,
+    ) -> io::Result<()> {
+        todo!()
+    }
+}

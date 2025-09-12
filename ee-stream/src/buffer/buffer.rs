@@ -24,6 +24,13 @@ impl<T: io::Write> BufReadWriter<T> {
             inner,
         }
     }
+    pub fn with_capacity(cap: usize, inner: T) -> Self {
+        Self {
+            read_buf: ReaderBuff::with_capacity(cap),
+            write_buf: WriterBuff::with_capacity(cap),
+            inner,
+        }
+    }
     pub fn with_read_write_capacity(r: usize, w: usize, inner: T) -> Self {
         Self {
             read_buf: ReaderBuff::with_capacity(r),
