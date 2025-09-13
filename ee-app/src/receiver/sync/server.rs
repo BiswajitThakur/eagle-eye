@@ -1,48 +1,24 @@
 use std::{
-    error::Error,
-    io::{self, Read, Result, Write},
+    io::{self, Read, Write},
     num::NonZeroUsize,
     sync::{Arc, Mutex, atomic::AtomicUsize},
     thread::JoinHandle,
 };
 
-pub trait ReceiverConnectionHandler: Default + Send + Sync {
-    type AppData: Default + Send + Sync;
-    type Stream: Read + Write;
-    fn get(
-        &self,
-        id: impl AsRef<str>,
-    ) -> Option<&Box<dyn Fn(&Arc<Mutex<Self::AppData>>, &mut Self::Stream) -> io::Result<()>>>;
-}
+use crate::receiver::sync::{app::App, handler::ConnectionHandler};
 
-pub trait ReceiverApp {
-    type Stream: Read + Write + Send + Sync;
-    type BufStream: Read + Write + Send + Sync;
-    type EStream: Read + Write + Send + Sync;
-    type AppData: Default + Send + Sync;
-    type ConnectionHandler: ReceiverConnectionHandler<AppData = Self::AppData, Stream = Self::EStream>;
-    fn get_stream(this: Arc<Self>) -> impl FnMut() -> Option<Self::Stream>;
-    fn to_buffer_stream(this: &Arc<Self>, stream: Self::Stream) -> Self::BufStream;
-    fn log_error<E: Error>(_: &Arc<Self>, _error: E) {}
-    fn encrypt_connection(
-        this: &Arc<Self>,
-        data: &Arc<Mutex<Self::AppData>>,
-        stream: Self::BufStream,
-    ) -> Result<Self::EStream>;
-}
-
-pub struct ReceiverAppServer<App>
+pub struct Server<A>
 where
-    App: ReceiverApp + Send + Sync + 'static,
+    A: App + Send + Sync + 'static,
 {
     version: (u32, u32, u32),
     app_name: &'static str,
-    app: Arc<App>,
-    app_data: Arc<Mutex<App::AppData>>,
-    connection_handler: Arc<App::ConnectionHandler>,
+    app: Arc<A>,
+    app_data: Arc<Mutex<A::AppData>>,
+    connection_handler: Arc<A::ConnectionHandler>,
     auth: Arc<
         Box<
-            dyn Fn(Arc<App>, Arc<Mutex<App::AppData>>, &mut App::BufStream) -> io::Result<bool>
+            dyn Fn(Arc<A>, Arc<Mutex<A::AppData>>, &mut A::BufStream) -> io::Result<bool>
                 + Send
                 + Sync
                 + 'static,
@@ -52,10 +28,10 @@ where
     active_connection: Arc<AtomicUsize>,
 }
 
-impl<App: ReceiverApp + Send + Sync + 'static> ReceiverAppServer<App> {
+impl<A: App + Send + Sync + 'static> Server<A> {
     pub fn run(self) {
         let auth = self.auth.clone();
-        let mut get_stream = App::get_stream(self.app.clone());
+        let mut get_stream = A::get_stream(self.app.clone());
         while let Some(stream) = get_stream() {
             let app = self.app.clone();
             let data = self.app_data.clone();
@@ -119,10 +95,11 @@ impl<App: ReceiverApp + Send + Sync + 'static> ReceiverAppServer<App> {
             });
         }
     }
+
     fn connect(
         app_name: &str,
         app_version: (u32, u32, u32),
-        stream: &mut App::BufStream,
+        stream: &mut A::BufStream,
     ) -> io::Result<bool> {
         // sender send
         // <app-name><version>
@@ -164,7 +141,7 @@ impl<App: ReceiverApp + Send + Sync + 'static> ReceiverAppServer<App> {
             Ok(false)
         }
     }
-    fn read_task_id(stream: &mut App::EStream) -> io::Result<String> {
+    fn read_task_id(stream: &mut A::EStream) -> io::Result<String> {
         let mut buf = [0; 1];
         let mut result = String::new();
         loop {
@@ -179,10 +156,10 @@ impl<App: ReceiverApp + Send + Sync + 'static> ReceiverAppServer<App> {
         }
         Ok(result)
     }
-    pub fn new<F: FnOnce() -> App + Send + Sync + 'static>(f: F) -> Self {
+    pub fn new<F: FnOnce() -> A + Send + Sync + 'static>(f: F) -> Self {
         let app = f();
-        let data = Arc::new(Mutex::new(App::AppData::default()));
-        let handler = Arc::new(App::ConnectionHandler::default());
+        let data = Arc::new(Mutex::new(A::AppData::default()));
+        let handler = Arc::new(A::ConnectionHandler::default());
         Self {
             version: (0, 0, 0),
             app_name: "eagle-eye",
@@ -196,7 +173,7 @@ impl<App: ReceiverApp + Send + Sync + 'static> ReceiverAppServer<App> {
     }
     pub fn auth(
         &mut self,
-        f: impl Fn(Arc<App>, Arc<Mutex<App::AppData>>, &mut App::BufStream) -> io::Result<bool>
+        f: impl Fn(Arc<A>, Arc<Mutex<A::AppData>>, &mut A::BufStream) -> io::Result<bool>
         + Send
         + Sync
         + 'static,
@@ -212,15 +189,15 @@ impl<App: ReceiverApp + Send + Sync + 'static> ReceiverAppServer<App> {
         self.app_name = name;
         self
     }
-    pub fn app(&mut self, app: App) -> &mut Self {
+    pub fn app(&mut self, app: A) -> &mut Self {
         self.app = Arc::new(app);
         self
     }
-    pub fn app_data(&mut self, data: App::AppData) -> &mut Self {
+    pub fn app_data(&mut self, data: A::AppData) -> &mut Self {
         self.app_data = Arc::new(Mutex::new(data));
         self
     }
-    pub fn handler(&mut self, handler: App::ConnectionHandler) -> &mut Self {
+    pub fn handler(&mut self, handler: A::ConnectionHandler) -> &mut Self {
         self.connection_handler = Arc::new(handler);
         self
     }

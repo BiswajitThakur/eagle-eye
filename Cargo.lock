@@ -78,6 +78,9 @@ dependencies = [
 [[package]]
 name = "ee-app"
 version = "0.1.0"
+dependencies = [
+ "ee-stream",
+]
 
 [[package]]
 name = "ee-broadcaster"

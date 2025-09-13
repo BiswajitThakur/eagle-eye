@@ -9,14 +9,10 @@ use std::{
     io::{self, Read, Write},
     net::{SocketAddr, TcpStream},
     sync::{Arc, Mutex},
-    time::Duration,
 };
 
 use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
-use ee_app::{
-    app::receiver_app::{ReceiverApp, ReceiverAppServer, ReceiverConnectionHandler},
-    app_data::MyStorage,
-};
+use ee_app::receiver::sync::{app::App, handler::Handler, server::Server};
 use ee_broadcaster::ReceiverInfo;
 use ee_stream::{buffer::BufReadWriter, e_stream::EStreamSync};
 use rand::Rng;
@@ -46,15 +42,16 @@ fn main() -> io::Result<()> {
         let app = AppSync::new(config);
         app.run()?;
     */
-    let mut server = ReceiverAppServer::new(move || MyApp::new());
+    let mut server = Server::new(move || MyApp::new());
+
     server
         .app_name("eagle-eye")
         .version((1, 0, 0))
-        .app_data(AppData::new())
-        .handler(Handler {})
-        .max_connection(8);
+        .handler(Handler {});
 
+    server.max_connection(8);
     server.auth(auth);
+    server.app_data(AppData::new());
 
     server.run();
     Ok(())
@@ -74,7 +71,7 @@ impl AppData {
 #[derive(Default)]
 struct Handler {}
 
-impl ReceiverConnectionHandler for Handler {
+impl Handler for Handler {
     type AppData = AppData;
     type Stream = EStreamSync<BufReadWriter<TcpStream>>;
     fn get(
@@ -87,7 +84,7 @@ impl ReceiverConnectionHandler for Handler {
     }
 }
 
-impl ReceiverApp for MyApp {
+impl App for MyApp {
     type Stream = TcpStream;
     type BufStream = BufReadWriter<TcpStream>;
     type EStream = EStreamSync<Self::BufStream>;
