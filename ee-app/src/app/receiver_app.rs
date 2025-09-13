@@ -6,21 +6,17 @@ use std::{
     thread::JoinHandle,
 };
 
-use crate::app_data::AppData;
-
 pub trait ReceiverApp {
     type Stream: Read + Write + Send + Sync;
     type BufStream: Read + Write + Send + Sync;
     type EStream: Read + Write + Send + Sync;
     type AppData: Default + Send + Sync;
     type ConnectionHandler: Default + Send + Sync;
-    fn get_stream(&self) -> impl FnMut() -> Option<Self::Stream>;
-    fn accept_version(&self) -> impl Fn((u32, u32, u32)) -> bool;
-    fn to_buffer_stream(&self, stream: Self::Stream) -> Self::BufStream;
-    fn handle_auth(&self, stream: &mut Self::BufStream) -> Result<bool>;
-    fn log_error<E: Error>(&self, _error: E) {}
+    fn get_stream(this: Arc<Self>) -> impl FnMut() -> Option<Self::Stream>;
+    fn to_buffer_stream(this: &Arc<Self>, stream: Self::Stream) -> Self::BufStream;
+    fn log_error<E: Error>(_this: &Arc<Self>, _error: E) {}
     fn encrypt_connection(
-        &self,
+        this: &Arc<Self>,
         data: &Arc<Mutex<Self::AppData>>,
         stream: Self::BufStream,
     ) -> Result<Self::EStream>;
@@ -40,55 +36,73 @@ where
     app: Arc<App>,
     app_data: Arc<Mutex<App::AppData>>,
     connection_handler: Arc<App::ConnectionHandler>,
-    auth: Box<dyn Fn(Arc<App>, &mut App::BufStream) -> io::Result<bool>>,
+    auth: Arc<
+        Box<
+            dyn Fn(Arc<App>, Arc<Mutex<App::AppData>>, &mut App::BufStream) -> io::Result<bool>
+                + Send
+                + Sync
+                + 'static,
+        >,
+    >,
     max_connection: NonZeroUsize,
     active_connection: Arc<AtomicUsize>,
 }
 
 impl<App: ReceiverApp + Send + Sync + 'static> ReceiverAppServer<App> {
     pub fn run(self) {
-        let is_connect = self.app.accept_version();
-        let mut get_stream = self.app.get_stream();
+        let auth = self.auth.clone();
+        let mut get_stream = App::get_stream(self.app.clone());
         while let Some(stream) = get_stream() {
+            let app = self.app.clone();
             let data = self.app_data.clone();
             let handler = self.connection_handler.clone();
-            let mut stream = App::to_buffer_stream(&self.app, stream);
-            let r = self.connect(&mut stream, &is_connect);
-            if let Err(err) = r {
-                App::log_error(&self.app, err);
-                continue;
-            } else {
-                if !r.unwrap() {
-                    continue;
+
+            let app_name = self.app_name;
+            let version = self.version;
+            let auth = auth.clone();
+
+            self.spawn(move || {
+                let mut stream = App::to_buffer_stream(&app, stream);
+                let r = Self::connect(app_name, version, &mut stream);
+                if let Err(err) = r {
+                    App::log_error(&app, err);
+                    return;
+                } else {
+                    if !r.unwrap() {
+                        return;
+                    }
                 }
-            }
-            let r = App::handle_auth(&self.app, &mut stream);
-            if let Err(err) = r {
-                App::log_error(&self.app, err);
-                continue;
-            } else {
-                if !r.unwrap() {
-                    continue;
+                let r = auth(app.clone(), data.clone(), &mut stream);
+                if let Err(err) = r {
+                    App::log_error(&app, err);
+                    return;
+                } else {
+                    if !r.unwrap() {
+                        return;
+                    }
                 }
-            }
-            let e_stream = App::encrypt_connection(&self.app, &data, stream);
-            if let Err(ref err) = e_stream {
-                self.app.log_error(err);
-            }
-            self.span(|| App::handle_connection(data, handler, e_stream.unwrap()))
-                .unwrap();
+                let e_stream = App::encrypt_connection(&app, &data, stream);
+                if let Err(ref err) = e_stream {
+                    App::log_error(&app, err);
+                }
+                let e_stream = e_stream.unwrap();
+                let v = App::handle_connection(data, handler, e_stream);
+                if let Err(err) = v {
+                    App::log_error(&app, err);
+                }
+            });
         }
     }
     fn connect(
-        &self,
+        app_name: &str,
+        app_version: (u32, u32, u32),
         stream: &mut App::BufStream,
-        f: impl Fn((u32, u32, u32)) -> bool,
     ) -> io::Result<bool> {
         // sender send
         // <app-name><version>
         let mut buf = [0u8; 4];
         let buf_len = buf.len();
-        let mut app_name = self.app_name.as_bytes();
+        let mut app_name = app_name.as_bytes();
         // read prefix (app name)
         loop {
             if app_name.is_empty() {
@@ -108,11 +122,19 @@ impl<App: ReceiverApp + Send + Sync + 'static> ReceiverAppServer<App> {
         stream.read_exact(&mut buf)?;
         let patch = u32::from_be_bytes(buf);
         let version = (major, minor, patch);
-        if f(version) {
+        if version.0 == app_version.0 {
             stream.write_all(b":ok:")?;
+            stream.write_all(&app_version.0.to_be_bytes())?;
+            stream.write_all(&app_version.1.to_be_bytes())?;
+            stream.write_all(&app_version.2.to_be_bytes())?;
+            stream.flush()?;
             Ok(true)
         } else {
             stream.write_all(b":version_not_accepted:")?;
+            stream.write_all(&app_version.0.to_be_bytes())?;
+            stream.write_all(&app_version.1.to_be_bytes())?;
+            stream.write_all(&app_version.2.to_be_bytes())?;
+            stream.flush()?;
             Ok(false)
         }
     }
@@ -126,43 +148,46 @@ impl<App: ReceiverApp + Send + Sync + 'static> ReceiverAppServer<App> {
             app: Arc::new(app),
             app_data: data,
             connection_handler: handler,
-            auth: Box::new(|_, _| Ok(true)),
+            auth: Arc::new(Box::new(|_, _, _| Ok(true))),
             max_connection: unsafe { NonZeroUsize::new_unchecked(4) },
             active_connection: Arc::new(AtomicUsize::new(0)),
         }
     }
     pub fn auth(
-        mut self,
-        f: impl Fn(Arc<App>, &mut App::BufStream) -> io::Result<bool> + 'static,
-    ) -> Self {
-        self.auth = Box::new(f);
+        &mut self,
+        f: impl Fn(Arc<App>, Arc<Mutex<App::AppData>>, &mut App::BufStream) -> io::Result<bool>
+        + Send
+        + Sync
+        + 'static,
+    ) -> &mut Self {
+        self.auth = Arc::new(Box::new(f));
         self
     }
-    pub fn version(mut self, version: (u32, u32, u32)) -> Self {
+    pub fn version(&mut self, version: (u32, u32, u32)) -> &mut Self {
         self.version = version;
         self
     }
-    pub fn app_name(mut self, name: &'static str) -> Self {
+    pub fn app_name(&mut self, name: &'static str) -> &mut Self {
         self.app_name = name;
         self
     }
-    pub fn app(mut self, app: App) -> Self {
+    pub fn app(&mut self, app: App) -> &mut Self {
         self.app = Arc::new(app);
         self
     }
-    pub fn app_data(mut self, data: App::AppData) -> Self {
+    pub fn app_data(&mut self, data: App::AppData) -> &mut Self {
         self.app_data = Arc::new(Mutex::new(data));
         self
     }
-    pub fn handler(mut self, handler: App::ConnectionHandler) -> Self {
+    pub fn handler(&mut self, handler: App::ConnectionHandler) -> &mut Self {
         self.connection_handler = Arc::new(handler);
         self
     }
-    pub fn max_connection(mut self, n: usize) -> Self {
+    pub fn max_connection(&mut self, n: usize) -> &mut Self {
         self.max_connection = NonZeroUsize::new(n).expect("max connection can not be zero");
         self
     }
-    fn span<F, T>(&self, f: F) -> Option<JoinHandle<T>>
+    fn spawn<F, T>(&self, f: F) -> Option<JoinHandle<T>>
     where
         F: FnOnce() -> T,
         F: Send + 'static,
