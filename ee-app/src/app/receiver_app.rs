@@ -6,25 +6,29 @@ use std::{
     thread::JoinHandle,
 };
 
+pub trait ReceiverConnectionHandler: Default + Send + Sync {
+    type AppData: Default + Send + Sync;
+    type Stream: Read + Write;
+    fn get(
+        &self,
+        id: impl AsRef<str>,
+    ) -> Option<&Box<dyn Fn(&Arc<Mutex<Self::AppData>>, &mut Self::Stream) -> io::Result<()>>>;
+}
+
 pub trait ReceiverApp {
     type Stream: Read + Write + Send + Sync;
     type BufStream: Read + Write + Send + Sync;
     type EStream: Read + Write + Send + Sync;
     type AppData: Default + Send + Sync;
-    type ConnectionHandler: Default + Send + Sync;
+    type ConnectionHandler: ReceiverConnectionHandler<AppData = Self::AppData, Stream = Self::EStream>;
     fn get_stream(this: Arc<Self>) -> impl FnMut() -> Option<Self::Stream>;
     fn to_buffer_stream(this: &Arc<Self>, stream: Self::Stream) -> Self::BufStream;
-    fn log_error<E: Error>(_this: &Arc<Self>, _error: E) {}
+    fn log_error<E: Error>(_: &Arc<Self>, _error: E) {}
     fn encrypt_connection(
         this: &Arc<Self>,
         data: &Arc<Mutex<Self::AppData>>,
         stream: Self::BufStream,
     ) -> Result<Self::EStream>;
-    fn handle_connection(
-        data: Arc<Mutex<Self::AppData>>,
-        handler: Arc<Self::ConnectionHandler>,
-        stream: Self::EStream,
-    ) -> io::Result<()>;
 }
 
 pub struct ReceiverAppServer<App>
@@ -85,10 +89,32 @@ impl<App: ReceiverApp + Send + Sync + 'static> ReceiverAppServer<App> {
                 if let Err(ref err) = e_stream {
                     App::log_error(&app, err);
                 }
-                let e_stream = e_stream.unwrap();
-                let v = App::handle_connection(data, handler, e_stream);
-                if let Err(err) = v {
-                    App::log_error(&app, err);
+                let mut e_stream = e_stream.unwrap();
+                loop {
+                    let id = Self::read_task_id(&mut e_stream);
+                    if id.is_err() {
+                        let err = id.unwrap_err();
+                        App::log_error(&app, err);
+                        return;
+                    }
+                    let id = id.unwrap();
+                    if id.is_empty() || &id == ":break:" {
+                        break;
+                    }
+                    if let Some(f) = handler.get(id) {
+                        if let Err(err) = e_stream.write_all(&[0, 1, 0]) {
+                            App::log_error(&app, err);
+                            return;
+                        };
+                        if let Err(err) = f(&data, &mut e_stream) {
+                            App::log_error(&app, err);
+                        };
+                    } else {
+                        if let Err(err) = e_stream.write_all(&[1, 0, 1]) {
+                            App::log_error(&app, err);
+                            return;
+                        };
+                    }
                 }
             });
         }
@@ -137,6 +163,21 @@ impl<App: ReceiverApp + Send + Sync + 'static> ReceiverAppServer<App> {
             stream.flush()?;
             Ok(false)
         }
+    }
+    fn read_task_id(stream: &mut App::EStream) -> io::Result<String> {
+        let mut buf = [0; 1];
+        let mut result = String::new();
+        loop {
+            if result.len() > 100 {
+                return Err(io::Error::other("Tast ID can not be greater then 100"));
+            }
+            let n = stream.read(&mut buf)?;
+            if n == 0 || buf[0] == b'\n' {
+                break;
+            }
+            result.push(buf[0] as char);
+        }
+        Ok(result)
     }
     pub fn new<F: FnOnce() -> App + Send + Sync + 'static>(f: F) -> Self {
         let app = f();

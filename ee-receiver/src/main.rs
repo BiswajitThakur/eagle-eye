@@ -8,13 +8,13 @@ use std::{
     collections::HashMap,
     io::{self, Read, Write},
     net::{SocketAddr, TcpStream},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
 use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 use ee_app::{
-    app::receiver_app::{ReceiverApp, ReceiverAppServer},
+    app::receiver_app::{ReceiverApp, ReceiverAppServer, ReceiverConnectionHandler},
     app_data::MyStorage,
 };
 use ee_broadcaster::ReceiverInfo;
@@ -54,25 +54,7 @@ fn main() -> io::Result<()> {
         .handler(Handler {})
         .max_connection(8);
 
-    server.auth(|app, data, stream| {
-        let iv = rand::rng().random::<[u8; 16]>();
-        let data = rand::rng().random::<[u8; 32]>();
-        let mut buf = [0u8; 32];
-        let mut cipher = ctr::Ctr64LE::<aes::Aes256>::new(&app.key.into(), &iv.into());
-        cipher.apply_keystream_b2b(&data, &mut buf).unwrap();
-        stream.write_all(&iv)?;
-        stream.write_all(&buf)?;
-        stream.flush()?;
-        stream.read_exact(&mut buf)?;
-        if data != buf {
-            stream.write_all(b":1:")?;
-            stream.flush()?;
-            return Ok(false);
-        }
-        stream.write_all(b":0:")?;
-        stream.flush()?;
-        Ok(true)
-    });
+    server.auth(auth);
 
     server.run();
     Ok(())
@@ -92,6 +74,19 @@ impl AppData {
 #[derive(Default)]
 struct Handler {}
 
+impl ReceiverConnectionHandler for Handler {
+    type AppData = AppData;
+    type Stream = EStreamSync<BufReadWriter<TcpStream>>;
+    fn get(
+        &self,
+        id: impl AsRef<str>,
+    ) -> Option<
+        &Box<dyn Fn(&Arc<std::sync::Mutex<Self::AppData>>, &mut Self::Stream) -> io::Result<()>>,
+    > {
+        todo!()
+    }
+}
+
 impl ReceiverApp for MyApp {
     type Stream = TcpStream;
     type BufStream = BufReadWriter<TcpStream>;
@@ -99,37 +94,12 @@ impl ReceiverApp for MyApp {
     type AppData = AppData;
     type ConnectionHandler = Handler;
     fn get_stream(_: Arc<Self>) -> impl FnMut() -> Option<Self::Stream> {
-        let mut receiver = ReceiverInfo::builder()
-            .prefix("eagle-eye")
-            .buffer_size(4096)
-            .socket_addr(SocketAddr::from(([255, 255, 255, 255], 7766)))
-            .build()
-            .unwrap();
-        let v = move || {
-            loop {
-                if let Ok(Some((a, _))) = receiver.next() {
-                    let v = TcpStream::connect(a);
-                    if v.is_err() {
-                        continue;
-                    }
-                    return v.ok();
-                } else {
-                    return None;
-                }
-            }
-        };
-        v
+        get_stream_()
     }
     fn to_buffer_stream(_this: &Arc<Self>, stream: Self::Stream) -> Self::BufStream {
         BufReadWriter::with_capacity(8 * 1024, stream)
     }
-    fn handle_connection(
-        data: Arc<std::sync::Mutex<Self::AppData>>,
-        handler: Arc<Self::ConnectionHandler>,
-        stream: Self::EStream,
-    ) -> io::Result<()> {
-        todo!()
-    }
+
     fn log_error<E: std::error::Error>(_this: &Arc<Self>, _error: E) {
         todo!()
     }
@@ -140,4 +110,51 @@ impl ReceiverApp for MyApp {
     ) -> io::Result<Self::EStream> {
         todo!()
     }
+}
+
+fn get_stream_() -> impl FnMut() -> Option<TcpStream> {
+    let mut receiver = ReceiverInfo::builder()
+        .prefix("eagle-eye")
+        .buffer_size(4096)
+        .socket_addr(SocketAddr::from(([255, 255, 255, 255], 7766)))
+        .build()
+        .unwrap();
+    let v = move || {
+        loop {
+            if let Ok(Some((a, _))) = receiver.next() {
+                let v = TcpStream::connect(a);
+                if v.is_err() {
+                    continue;
+                }
+                return v.ok();
+            } else {
+                return None;
+            }
+        }
+    };
+    v
+}
+
+fn auth(
+    app: Arc<MyApp>,
+    _data: Arc<Mutex<AppData>>,
+    stream: &mut BufReadWriter<TcpStream>,
+) -> io::Result<bool> {
+    let iv = rand::rng().random::<[u8; 16]>();
+    let data = rand::rng().random::<[u8; 32]>();
+    let mut buf = [0u8; 32];
+    let mut cipher = ctr::Ctr64LE::<aes::Aes256>::new(&app.key.into(), &iv.into());
+    cipher.apply_keystream_b2b(&data, &mut buf).unwrap();
+    stream.write_all(&iv)?;
+    stream.write_all(&buf)?;
+    stream.flush()?;
+    stream.read_exact(&mut buf)?;
+    if data != buf {
+        stream.write_all(b":1:")?;
+        stream.flush()?;
+        return Ok(false);
+    }
+    stream.write_all(b":0:")?;
+    stream.flush()?;
+    Ok(true)
 }
