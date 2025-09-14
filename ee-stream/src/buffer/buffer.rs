@@ -8,6 +8,7 @@ pub struct BufReadWriter<T: io::Write> {
     inner: T,
 }
 
+/*
 impl<T: io::Write> Drop for BufReadWriter<T> {
     fn drop(&mut self) {
         if !self.write_buf.buffer().is_empty() {
@@ -15,7 +16,7 @@ impl<T: io::Write> Drop for BufReadWriter<T> {
         }
     }
 }
-
+*/
 impl<T: io::Write> BufReadWriter<T> {
     pub fn new(inner: T) -> Self {
         Self {
@@ -67,7 +68,10 @@ impl<T: io::Write> BufReadWriter<T> {
     pub fn inner_ref(&self) -> &T {
         &self.inner
     }
-    pub fn inner_ref_mut(&mut self) -> &T {
+    pub fn inner(self) -> T {
+        self.inner
+    }
+    pub fn inner_ref_mut(&mut self) -> &mut T {
         &mut self.inner
     }
 }

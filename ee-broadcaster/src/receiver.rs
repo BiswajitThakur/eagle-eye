@@ -19,7 +19,7 @@ impl ReceiverInfo {
     pub fn builder() -> ReceiverInfoBuilder {
         ReceiverInfoBuilder::default()
     }
-    pub fn next(&mut self) -> io::Result<Option<(SocketAddr, &mut [u8])>> {
+    pub fn next(&mut self) -> io::Result<Option<(SocketAddr, &mut [u8], usize)>> {
         let socket = &self.socket;
         loop {
             if !self.is_running.load(Ordering::Relaxed) {
@@ -29,7 +29,7 @@ impl ReceiverInfo {
             dbg!("data received ( remove me )");
             match v {
                 Ok((total, addr)) if self.buf.starts_with(&self.prefix) => {
-                    return Ok(Some((addr, &mut self.buf[self.prefix.len()..total])));
+                    return Ok(Some((addr, &mut self.buf[self.prefix.len()..], total)));
                 }
                 Ok(_) => {
                     if !self.is_running.load(Ordering::Relaxed) {
@@ -82,7 +82,7 @@ impl ReceiverInfoBuilder {
     }
     pub fn build(self) -> io::Result<ReceiverInfo> {
         let buf_size = self.buf_size.expect("Buffer size can not be zero...").get();
-        let v = Box::<[u8]>::new_uninit_slice(buf_size);
+        let v = Box::<[u8]>::new_uninit_slice(buf_size + self.prefix.len());
         let buf = unsafe { v.assume_init() };
         let socket = UdpSocket::bind(self.socket_addr)?;
         socket.set_read_timeout(self.time_out)?;

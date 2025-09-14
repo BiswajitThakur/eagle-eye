@@ -97,3 +97,39 @@ pub(crate) fn write_log_sync<P: AsRef<Path>>(path: Option<P>, err: io::Error) {
     }
     let _ = writeln!(w, "{err}");
 }*/
+
+use std::{
+    io::{self, Read, Write},
+    net::TcpStream,
+    sync::{Arc, Mutex},
+};
+
+use aes::cipher::{KeyIvInit, StreamCipher};
+use ee_stream::buffer::BufReadWriter;
+use rand::Rng;
+
+use crate::{app::App, data::AppData};
+
+pub fn auth(
+    app: Arc<App>,
+    _data: Arc<Mutex<AppData>>,
+    stream: &mut BufReadWriter<TcpStream>,
+) -> io::Result<bool> {
+    let iv = rand::rng().random::<[u8; 16]>();
+    let data = rand::rng().random::<[u8; 32]>();
+    let mut buf = [0u8; 32];
+    let mut cipher = ctr::Ctr64LE::<aes::Aes256>::new(app.key().into(), &iv.into());
+    cipher.apply_keystream_b2b(&data, &mut buf).unwrap();
+    stream.write_all(&iv)?;
+    stream.write_all(&buf)?;
+    stream.flush()?;
+    stream.read_exact(&mut buf)?;
+    if data != buf {
+        stream.write_all(b":1:")?;
+        stream.flush()?;
+        return Ok(false);
+    }
+    stream.write_all(b":0:")?;
+    stream.flush()?;
+    Ok(true)
+}
